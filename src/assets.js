@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { loadModels } from './models.js';
 
 // Poly Haven (CC0) PBR sets: *_diff (albedo), *_nor (OpenGL normal), *_arm (AO / roughness / metalness packed)
 export const TEX_IDS = [
@@ -43,6 +44,7 @@ export function loadAssets(onProgress) {
       analyzeSky(t);
     });
     new GLTFLoader(manager).load('assets/Soldier.glb', (g) => (assets.soldier = g));
+    loadModels(manager);
   });
 }
 

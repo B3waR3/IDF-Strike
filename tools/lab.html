@@ -1,0 +1,45 @@
+<!doctype html>
+<html><head><style>body{margin:0;background:#556;font:12px monospace;color:#ff0}canvas{display:block}.l{position:absolute;padding:2px 4px;background:#000a}</style>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
+</head><body>
+<script type="module">
+import * as THREE from 'three';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { loadModels, makeGun, GUNS } from '../src/models.js';
+
+const q = new URLSearchParams(location.search);
+const ids = (q.get('g') || Object.keys(GUNS).join(',')).split(',');
+const cols = Math.ceil(Math.sqrt(ids.length)), rows = Math.ceil(ids.length / cols);
+const W = innerWidth, H = innerHeight, tw = W / cols, th = H / rows;
+const r = new THREE.WebGLRenderer({ antialias: true });
+r.setSize(W, H); r.setScissorTest(true); document.body.appendChild(r.domElement);
+r.toneMapping = THREE.ACESFilmicToneMapping;
+const env = new THREE.PMREMGenerator(r).fromScene(new RoomEnvironment()).texture;
+const tiles = [];
+window.__guns = {};
+const manager = new THREE.LoadingManager(() => {
+  ids.forEach((id, i) => {
+    const g = makeGun(id); __guns[id] = g;
+    const scene = new THREE.Scene(); scene.environment = env; scene.background = new THREE.Color(0x667788);
+    scene.add(g.root);
+    g.mag.traverse((o) => { if (o.isMesh) { o.material = o.material.clone(); o.material.emissive = new THREE.Color(0x880000); } });
+    g.slide.traverse((o) => { if (o.isMesh) { o.material = o.material.clone(); o.material.emissive = new THREE.Color(0x008800); } });
+    const dot = (p, c) => { const m = new THREE.Mesh(new THREE.SphereGeometry(g.size.z * 0.012), new THREE.MeshBasicMaterial({ color: c, depthTest: false })); m.position.copy(p); m.renderOrder = 9; scene.add(m); };
+    dot(g.grip, 0xff0000); dot(g.fore, 0x0000ff); dot(g.muzzle, 0xffff00);
+    const sl = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, g.sightY, 1), new THREE.Vector3(0, g.sightY, -1)]), new THREE.LineBasicMaterial({ color: 0x00ffff, depthTest: false })); sl.renderOrder = 9; scene.add(sl);
+    const grid = new THREE.GridHelper(2, 200, 0x556677, 0x556677); grid.rotation.z = Math.PI / 2; grid.position.x = -0.2; scene.add(grid);
+    const grid2 = new THREE.GridHelper(2, 20, 0xff00ff, 0x223344); grid2.rotation.z = Math.PI / 2; grid2.position.x = -0.19; scene.add(grid2);
+    if (q.get('view') === 'top') { grid.rotation.set(0, 0, 0); grid2.rotation.set(0, 0, 0); grid.position.set(0, -0.3, 0); grid2.position.set(0, -0.29, 0); }
+    const R = Math.max(g.size.z, g.size.y) * 0.6, a = tw / th;
+    const cam = new THREE.OrthographicCamera(-R * a, R * a, R, -R, -10, 10);
+    cam.position.set(q.get('view') === 'top' ? 0 : 1, q.get('view') === 'top' ? 1 : 0, 0); cam.lookAt(0, 0, 0);
+    const x = (i % cols) * tw, y = H - (Math.floor(i / cols) + 1) * th;
+    tiles.push([x, y, scene, cam]);
+    const l = document.createElement('div'); l.className = 'l'; l.style.left = x + 'px'; l.style.top = (H - y - th) + 'px';
+    l.textContent = `${id} ${g.size.toArray().map((v) => v.toFixed(3))} grid=1cm/10cm, magenta=origin`; document.body.appendChild(l);
+  });
+  window.__done = true;
+});
+loadModels(manager, '../', ids.map((id) => GUNS[id].file));
+(function loop() { for (const [x, y, s, c] of tiles) { r.setViewport(x, y, tw, th); r.setScissor(x, y, tw, th); r.render(s, c); } requestAnimationFrame(loop); })();
+</script></body></html>

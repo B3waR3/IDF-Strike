@@ -12,25 +12,25 @@ import * as SFX from './audio.js';
 // ============================================================
 const WEAPONS = {
   tavor: {
-    name: 'IWI Tavor X95', caliber: '5.56×45mm NATO · bullpup', type: 'rifle', model: 'tavor',
+    name: 'IWI Tavor TAR-21', caliber: '5.56×45mm NATO · bullpup', type: 'rifle', model: 'tavor',
     mag: 30, reserveMags: 6, chamber: true, rpm: 850, damage: 32, headMult: 2.4, range: 250,
     spread: 0.035, adsSpread: 0.003, bloomPerShot: 0.006, recoil: 0.011,
     reload: 2.3, reloadEmpty: 2.9, modes: ['AUTO', 'SEMI'], adsFov: 50, adsTime: 0.18, tracerEvery: 3,
-    optic: 'Meprolight M21 reflex', sound: { cut: 3600, dur: 0.16, thump: 130, gain: 0.9 },
+    optic: 'Reflex sight · suppressor', sound: { cut: 3600, dur: 0.16, thump: 130, gain: 0.9 },
   },
   m4: {
-    name: 'Colt M4A1 Carbine', caliber: '5.56×45mm NATO', type: 'rifle', model: 'm4',
+    name: 'Colt M4A1 (RIS II)', caliber: '5.56×45mm NATO', type: 'rifle', model: 'm4',
     mag: 30, reserveMags: 6, chamber: true, rpm: 800, damage: 31, headMult: 2.4, range: 250,
     spread: 0.038, adsSpread: 0.0035, bloomPerShot: 0.006, recoil: 0.012,
     reload: 2.1, reloadEmpty: 2.7, modes: ['AUTO', 'SEMI'], adsFov: 50, adsTime: 0.17, tracerEvery: 3,
-    optic: 'Meprolight M5 red dot', sound: { cut: 3800, dur: 0.15, thump: 140, gain: 0.9 },
+    optic: 'EOTech holographic sight', sound: { cut: 3800, dur: 0.15, thump: 140, gain: 0.9 },
   },
   negev: {
-    name: 'IWI Negev NG7', caliber: '7.62×51mm NATO · belt-fed', type: 'lmg', model: 'negev',
-    mag: 125, reserveMags: 2, chamber: false, rpm: 650, damage: 40, headMult: 2.2, range: 300,
+    name: 'FN MAG 58', caliber: '7.62×51mm NATO · belt-fed', type: 'lmg', model: 'negev',
+    mag: 100, reserveMags: 3, chamber: false, rpm: 650, damage: 40, headMult: 2.2, range: 300,
     spread: 0.06, adsSpread: 0.011, bloomPerShot: 0.004, recoil: 0.014, moveMult: 0.9,
     reload: 5.2, reloadEmpty: 6.0, modes: ['AUTO', 'SEMI'], adsFov: 55, adsTime: 0.32, tracerEvery: 2,
-    optic: 'Trijicon ACOG 4×', sound: { cut: 2600, dur: 0.22, thump: 90, gain: 1.05 },
+    optic: 'Iron sights · bipod', sound: { cut: 2600, dur: 0.22, thump: 90, gain: 1.05 },
   },
   m24: {
     name: 'M24 SWS', caliber: '7.62×51mm NATO · bolt-action', type: 'sniper', model: 'm24',
@@ -60,21 +60,21 @@ const CLASSES = [
     id: 'rifleman', name: 'RIFLEMAN', unit: 'Givati Brigade · 84th Infantry',
     desc: 'Balanced frontline infantry. Reliable bullpup rifle and full protection.',
     primary: 'tavor', secondary: 'glock', armor: 100, speed: 1.0, frags: 2, ifaks: 3,
-    gear: ['Ceramic plate carrier (NIJ Level IV)', 'Rabintex RBH-303 ballistic helmet', 'Meprolight M21 reflex sight', '2× M67 frag grenades', '3× IFAK (Israeli bandage, CAT tourniquet)'],
+    gear: ['Ceramic plate carrier (NIJ Level IV)', 'Rabintex RBH-303 ballistic helmet', 'Reflex sight + suppressor', '2× M67 frag grenades', '3× IFAK (Israeli bandage, CAT tourniquet)'],
     stats: { armor: 0.7, mobility: 0.6, firepower: 0.65 },
   },
   {
     id: 'assault', name: 'ASSAULT', unit: 'Egoz Commando Unit · 89th',
     desc: 'Fast-moving commando. Light armor, extra grenades for clearing rooms.',
     primary: 'm4', secondary: 'jericho', armor: 75, speed: 1.12, frags: 4, ifaks: 2,
-    gear: ['Low-profile plate carrier (Level III+)', 'High-cut helmet w/ NVG shroud', 'Meprolight M5 red dot', '4× M67 frag grenades', '2× IFAK'],
+    gear: ['Low-profile plate carrier (Level III+)', 'High-cut helmet w/ NVG shroud', 'EOTech sight + vertical grip', '4× M67 frag grenades', '2× IFAK'],
     stats: { armor: 0.5, mobility: 0.9, firepower: 0.6 },
   },
   {
     id: 'support', name: 'MACHINE GUNNER', unit: 'Golani Brigade · 1st Infantry',
-    desc: 'Heavy weapons. Suppress with 125-round belts. Slow but durable.',
+    desc: 'Heavy weapons. Suppress with 100-round belts. Slow but durable.',
     primary: 'negev', secondary: 'glock', armor: 130, speed: 0.88, frags: 1, ifaks: 3,
-    gear: ['Heavy plate carrier w/ side plates', 'Rabintex RBH-303 ballistic helmet', 'Trijicon ACOG 4× optic', '1× M67 frag grenade', '3× IFAK', '125-rd belt pouches'],
+    gear: ['Heavy plate carrier w/ side plates', 'Rabintex RBH-303 ballistic helmet', 'Folding bipod', '1× M67 frag grenade', '3× IFAK', '100-rd belt pouches'],
     stats: { armor: 0.95, mobility: 0.35, firepower: 0.95 },
   },
   {
@@ -1238,7 +1238,7 @@ function updateWeapon(dt) {
 
 function updateViewModel(dt) {
   const w = curW(), m = w.model, d = w.def;
-  for (const x of player.weapons) x.model.group.visible = x === w;
+  for (const x of player.weapons) x.model.group.visible = x.model.arms.visible = x === w;
   vmRoot.visible = !(d.scope && S.adsT > 0.9);
   const g = m.group;
   const pos = m.hip.clone().lerp(m.ads, S.adsT);
@@ -1265,7 +1265,7 @@ function updateViewModel(dt) {
   if (S.reloading) {
     const p = S.reloadT / S.reloadDur;
     const dip = Math.sin(Math.min(p, 1) * Math.PI);
-    rx -= dip * 0.45; rz += dip * 0.4; pos.y -= dip * 0.05;
+    rx += dip * 0.3; rz += dip * 0.55; pos.y -= dip * 0.06; pos.z -= dip * 0.04;
     let off = 0;
     if (p < 0.15) off = 0;
     else if (p < 0.35) off = -((p - 0.15) / 0.2) * 0.35;
@@ -1280,6 +1280,7 @@ function updateViewModel(dt) {
   g.position.copy(pos);
   g.rotation.set(rx, ry, rz);
   g.updateMatrixWorld(true);
+  m.update(S.reloading ? S.reloadT / S.reloadDur : -1, d.type === 'pistol' ? S.kick : 0);
 
   // Light the weapon with the real sun direction (in camera space), dimmed when the player stands in shadow.
   S.sunT -= dt;
@@ -1429,6 +1430,30 @@ function buildMenu() {
   $('resume-btn').onclick = resumeGame;
   $('quit-btn').onclick = toMenu;
   $('redeploy-btn').onclick = toMenu;
+  $('credits-btn').onclick = showCredits;
+  $('credits-close').onclick = () => $('credits').classList.add('hidden');
+}
+
+let creditsLoaded = false;
+async function showCredits() {
+  $('credits').classList.remove('hidden');
+  if (creditsLoaded) return;
+  const list = $('credits-list');
+  try {
+    const items = await (await fetch('assets/models/credits.json')).json();
+    list.replaceChildren(...items.map((c) => {
+      const row = document.createElement('div');
+      const a = document.createElement('a');
+      a.href = c.url; a.target = '_blank'; a.rel = 'noopener'; a.textContent = c.name;
+      const by = document.createElement('span');
+      by.textContent = ` by ${c.author} · ${c.license}`;
+      row.append(a, by);
+      return row;
+    }));
+    creditsLoaded = true;
+  } catch {
+    list.textContent = 'Could not load assets/models/credits.json';
+  }
 }
 
 // ============================================================
@@ -1477,4 +1502,4 @@ async function boot() {
 }
 boot();
 loop();
-window.__game = { S, player, enemies, mouse, keys, camera, scene, renderer, spawnEnemy, world, deploy, CLASSES, assets, sun, get pipe() { return pipe; }, applyQuality };
+window.__game = { S, player, enemies, mouse, keys, camera, vmCamera, scene, renderer, spawnEnemy, world, deploy, CLASSES, assets, sun, get pipe() { return pipe; }, applyQuality };

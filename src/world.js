@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { assets } from './assets.js';
 import { addSmokePlume, TEX } from './effects.js';
+import { makeProp } from './models.js';
 
 export const HALF = 114;
 export const colliders = [];
@@ -15,7 +16,7 @@ const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 
 // ============================================================
-//  MATERIALS — PBR with world-space box projection, macro variation and base grime
+//  MATERIALS ג€” PBR with world-space box projection, macro variation and base grime
 // ============================================================
 const NOISE_GLSL = /* glsl */`
   float wHash(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
@@ -517,6 +518,15 @@ function burntCar(scene, x, z, rotated) {
   if (Math.random() < 0.25) addSmokePlume(new THREE.Vector3(x, 0.6, z), 0.3, true);
 }
 
+function technical(scene, x, z, rotated) {
+  const { root, size } = makeProp('pickup');
+  root.rotation.y = (rotated ? Math.PI / 2 : 0) + rand(-0.1, 0.1) + (Math.random() < 0.5 ? Math.PI : 0);
+  root.position.set(x, 0, z);
+  scene.add(root);
+  const w = rotated ? size.z : size.x, d = rotated ? size.x : size.z;
+  colliderBox(x, z, w, d, 0, Math.min(size.y, 1.9), 'metal', 'c');
+}
+
 function palm(x, z) {
   const h = rand(6, 9), lean = rand(-0.6, 0.6), la = rand(0, Math.PI * 2);
   const top = new THREE.Vector3(x + Math.cos(la) * lean, h, z + Math.sin(la) * lean);
@@ -587,67 +597,10 @@ function electricLine(scene, x0, z0, x1, z1) {
 }
 
 function merkava(scene, x, z) {
-  const g = new THREE.Group();
-  const hull = M.tank, dark = M.black, steel = M.steel;
-  const add = (geo, m, px, py, pz, rx = 0, ry = 0, rz = 0) => {
-    const me = new THREE.Mesh(geo, m);
-    me.position.set(px, py, pz); me.rotation.set(rx, ry, rz);
-    me.castShadow = me.receiveShadow = true;
-    g.add(me);
-    return me;
-  };
-  const hullShape = new THREE.Shape([
-    new THREE.Vector2(-3.9, 0.55), new THREE.Vector2(3.4, 0.55), new THREE.Vector2(4.1, 1.35), new THREE.Vector2(2.2, 1.95),
-    new THREE.Vector2(-3.9, 1.95), new THREE.Vector2(-4.05, 1.2),
-  ]);
-  const hullGeo = new THREE.ExtrudeGeometry(hullShape, { depth: 3.5, bevelEnabled: true, bevelSize: 0.05, bevelThickness: 0.05 }).translate(0, 0, -1.75).rotateY(Math.PI / 2);
-  add(hullGeo, hull, 0, 0, 0);
-  add(new RoundedBoxGeometry(0.75, 0.55, 7.2, 2, 0.08), hull, -1.95, 1.55, 0.2);
-  add(new RoundedBoxGeometry(0.75, 0.55, 7.2, 2, 0.08), hull, 1.95, 1.55, 0.2);
-  for (const sx of [-1.95, 1.95]) {
-    add(new THREE.BoxGeometry(0.55, 0.12, 7.8), dark, sx, 0.08, 0);
-    add(new THREE.BoxGeometry(0.55, 0.12, 7.2), dark, sx, 1.06, 0);
-    for (let i = 0; i < 6; i++) add(new THREE.CylinderGeometry(0.36, 0.36, 0.45, 16).rotateZ(Math.PI / 2), steel, sx, 0.45, -2.9 + i * 1.12);
-    add(new THREE.CylinderGeometry(0.42, 0.42, 0.5, 14).rotateZ(Math.PI / 2), dark, sx, 0.75, -3.75);
-    add(new THREE.CylinderGeometry(0.4, 0.4, 0.5, 14).rotateZ(Math.PI / 2), dark, sx, 0.72, 3.65);
-  }
-  const tur = new THREE.Group();
-  tur.position.set(0, 1.95, 0.9);
-  g.add(tur);
-  const turShape = new THREE.Shape([
-    new THREE.Vector2(-1.35, 2.2), new THREE.Vector2(1.35, 2.2), new THREE.Vector2(1.45, -0.6), new THREE.Vector2(0.8, -2.8),
-    new THREE.Vector2(-0.8, -2.8), new THREE.Vector2(-1.45, -0.6),
-  ]);
-  const turGeo = new THREE.ExtrudeGeometry(turShape, { depth: 0.95, bevelEnabled: true, bevelSize: 0.06, bevelThickness: 0.06 }).rotateX(-Math.PI / 2);
-  const tm = new THREE.Mesh(turGeo, hull); tm.castShadow = tm.receiveShadow = true; tur.add(tm);
-  const barrel = new THREE.Group(); barrel.position.set(0, 0.5, -2.7); tur.add(barrel);
-  const bar = (r, l, zc, m) => { const me = new THREE.Mesh(new THREE.CylinderGeometry(r, r, l, 16).rotateX(Math.PI / 2), m); me.position.z = zc; me.castShadow = true; barrel.add(me); };
-  bar(0.2, 1.2, -0.5, hull); bar(0.14, 2.2, -2.2, hull); bar(0.135, 1.8, -4.1, hull); bar(0.16, 0.35, -5.1, steel);
-  const rack = new THREE.Mesh(new THREE.BoxGeometry(2.9, 0.6, 1.2), hull); rack.position.set(0, 0.35, 2.7); rack.castShadow = true; tur.add(rack);
-  for (let i = 0; i < 26; i++) {
-    const ball = new THREE.Mesh(new THREE.SphereGeometry(0.06, 6, 6), steel);
-    ball.position.set(-1.4 + (i % 13) * 0.23, -0.2 - Math.floor(i / 13) * 0.18, 3.25);
-    tur.add(ball);
-  }
-  for (const sx of [-1, 1]) {
-    const tro = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.55, 0.8), hull);
-    tro.position.set(sx * 1.55, 0.5, -0.9); tro.castShadow = true; tur.add(tro);
-  }
-  const cup = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.45, 0.35, 14), hull); cup.position.set(0.55, 1.1, 0.6); cup.castShadow = true; tur.add(cup);
-  const mg = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 1.1, 8).rotateX(Math.PI / 2), dark); mg.position.set(0.55, 1.45, 0.1); tur.add(mg);
-  for (let i = 0; i < 12; i++) {
-    const slat = new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.9, 0.03), steel);
-    slat.position.set(0, 1.35, 3.95 + i * 0.001);
-    if (i < 1) g.add(slat);
-  }
-  for (let i = 0; i < 14; i++) {
-    const bar2 = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.9, 0.03), steel);
-    bar2.position.set(-1.7 + i * 0.26, 1.35, 4.02);
-    g.add(bar2);
-  }
-  g.rotation.y = 0.05;
-  g.position.set(x, 0, z);
-  scene.add(g);
+  const { root } = makeProp('merkava');
+  root.rotation.y = Math.PI + 0.05;
+  root.position.set(x, 0, z);
+  scene.add(root);
   colliderBox(x, z, 4.4, 8.4, 0, 2.9, 'metal', 't');
   world.tankPos = new THREE.Vector3(x, 0, z);
 }
@@ -754,7 +707,8 @@ export function buildWorld(sc) {
     const t = Math.random();
     if (t < 0.3) jersey(x, z, vertical);
     else if (t < 0.55) sandbagWall(x, z, vertical);
-    else if (t < 0.8) burntCar(scene, x, z, vertical);
+    else if (t < 0.7) burntCar(scene, x, z, vertical);
+    else if (t < 0.8) technical(scene, x, z, vertical);
     else if (t < 0.9) concreteBlock(x, z);
     else {
       rubblePile(x, z, rand(1.5, 2.2), 0);

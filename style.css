@@ -118,6 +118,12 @@ button.secondary { background: #3a3628; color: #e8e4d8; }
 .panel { background: rgba(20,20,14,.92); border: 1px solid #4a4636; padding: 36px 48px; text-align: center; display: flex; flex-direction: column; gap: 14px; min-width: 360px; }
 .panel h2 { font-size: 40px; letter-spacing: 8px; }
 #go-title { color: #ff5a4e; }
+.credits-panel { max-width: min(760px, 94vw); max-height: 90vh; }
+.credits-note { font-size: 12px; color: #aaa49a; }
+#credits-list { overflow-y: auto; text-align: left; font-size: 13px; line-height: 1.7; color: #d8d2bf; }
+#credits-list a { color: #6ea8ff; text-decoration: none; }
+#credits-list a:hover { text-decoration: underline; }
+#credits-list span { color: #8f8a7c; }
 #go-stats { font-size: 15px; line-height: 1.9; color: #d8d2bf; text-align: left; }
 #go-stats b { float: right; color: #fff; margin-left: 30px; }
 

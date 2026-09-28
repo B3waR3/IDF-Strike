@@ -1,0 +1,49 @@
+<!doctype html>
+<html><head><style>body{margin:0;background:#556;font:12px monospace;color:#ff0}canvas{display:block}.l{position:absolute;padding:2px 4px;background:#000a}</style>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
+</head><body>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+const q = new URLSearchParams(location.search);
+const names = q.get('m').split(',');
+const view = q.get('view') || 'x';
+const cols = Math.ceil(Math.sqrt(names.length)), rows = Math.ceil(names.length / cols);
+const W = innerWidth, H = innerHeight, tw = W / cols, th = H / rows;
+const r = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+r.setSize(W, H); r.setScissorTest(true); document.body.appendChild(r.domElement);
+r.toneMapping = THREE.ACESFilmicToneMapping;
+const env = new THREE.PMREMGenerator(r).fromScene(new RoomEnvironment()).texture;
+const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
+const f = (v) => v.toArray().map((x) => +x.toFixed(3));
+window.__info = {};
+let done = 0;
+const tiles = [];
+(function loop() { for (const [x, y, s, c] of tiles) { r.setViewport(x, y, tw, th); r.setScissor(x, y, tw, th); r.render(s, c); } requestAnimationFrame(loop); })();
+names.forEach((name, i) => loader.load(`../assets/models/${name}.glb`, (g) => {
+  const scene = new THREE.Scene(); scene.environment = env; scene.background = new THREE.Color(0x667);
+  scene.add(new THREE.DirectionalLight(0xffffff, 2).translateX(2).translateY(3).translateZ(4));
+  const root = g.scene; scene.add(root); root.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(root, true);
+  const size = box.getSize(new THREE.Vector3()), c = box.getCenter(new THREE.Vector3());
+  const parts = [];
+  root.traverse((o) => { if (o.isMesh) { const b = new THREE.Box3().setFromObject(o, true); parts.push(`${o.name}|${o.material.name}|${f(b.getCenter(new THREE.Vector3()))}|${f(b.getSize(new THREE.Vector3()))}`); } });
+  const bones = [];
+  root.traverse((o) => { if (o.isBone && q.get('bones')) bones.push(o.name + ' ' + f(o.getWorldPosition(new THREE.Vector3()))); });
+  __info[name] = { size: f(size), center: f(c), min: f(box.min), max: f(box.max), parts, anims: g.animations.map((a) => a.name + ':' + a.duration.toFixed(2)), bones };
+  const R = Math.max(size.x, size.y, size.z) * 0.55;
+  const a = tw / th;
+  const cam = new THREE.OrthographicCamera(-R * a, R * a, R, -R, -100 * R, 100 * R);
+  const d = { x: [1, 0, 0], z: [0, 0, 1], y: [0, 1, 0.001], nx: [-1, 0, 0], nz: [0, 0, -1] }[view];
+  cam.position.copy(c).add(new THREE.Vector3(...d).multiplyScalar(R * 3)); cam.lookAt(c);
+  const ax = new THREE.AxesHelper(R * 0.5); ax.position.copy(c); scene.add(ax);
+  const x = (i % cols) * tw, y = H - (Math.floor(i / cols) + 1) * th;
+  tiles.push([x, y, scene, cam]);
+  const l = document.createElement('div'); l.className = 'l'; l.style.left = x + 'px'; l.style.top = (H - y - th) + 'px';
+  l.textContent = `${name} ${f(size)}`; document.body.appendChild(l);
+  if (++done === names.length) window.__done = true;
+}));
+</script></body></html>

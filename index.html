@@ -73,6 +73,7 @@
           <button id="deploy-btn" disabled>SELECT A CLASS</button>
           <div class="q-label">GRAPHICS QUALITY</div>
           <div id="quality"></div>
+          <button id="credits-btn" class="secondary">CREDITS</button>
         </div>
         <div class="controls">
           <div><kbd>W A S D</kbd> Move</div>
@@ -98,6 +99,16 @@
       <h2>PAUSED</h2>
       <button id="resume-btn">RESUME</button>
       <button id="quit-btn" class="secondary">ABORT MISSION</button>
+    </div>
+  </div>
+
+  <div id="credits" class="screen hidden">
+    <div class="panel credits-panel">
+      <h2>CREDITS</h2>
+      <p class="credits-note">3D models from Sketchfab, used under Creative Commons Attribution (CC BY 4.0).</p>
+      <div id="credits-list"></div>
+      <p class="credits-note">Textures and sky HDRI: Poly Haven (CC0). Character animations: Mixamo, via the three.js examples. Engine: three.js.</p>
+      <button id="credits-close" class="secondary">BACK</button>
     </div>
   </div>
 
