@@ -121,4 +121,20 @@ button.secondary { background: #3a3628; color: #e8e4d8; }
 #go-stats { font-size: 15px; line-height: 1.9; color: #d8d2bf; text-align: left; }
 #go-stats b { float: right; color: #fff; margin-left: 30px; }
 
+.deploy-col { display: flex; flex-direction: column; gap: 8px; }
+.q-label { font-size: 11px; letter-spacing: 3px; color: #c8b270; margin-top: 6px; }
+#quality { display: flex; gap: 4px; }
+#quality button { font-size: 11px; letter-spacing: 2px; padding: 7px 10px; background: #3a3628; color: #cfc9b6; flex: 1; }
+#quality button.active { background: #c8b270; color: #15140e; }
+
+#loading { background: radial-gradient(ellipse at center, #2a261a, #050503); z-index: 20; }
+.load-inner { text-align: center; width: min(520px, 90vw); }
+.load-track { height: 4px; background: rgba(255,255,255,.12); margin: 30px 0 10px; }
+#load-bar { height: 100%; width: 0; background: #c8b270; transition: width .2s; }
+#load-text { font-size: 12px; letter-spacing: 2px; color: #aaa49a; }
+
+/* Menu is drawn over the live 3D flyover. */
+#menu { background: linear-gradient(90deg, rgba(5,5,3,.55), rgba(5,5,3,.25) 50%, rgba(5,5,3,.55)); }
+.class-card { backdrop-filter: blur(6px); background: rgba(14,14,10,.72); }
+
 @media (max-width: 1000px) { #class-list { grid-template-columns: repeat(2, 1fr); } }

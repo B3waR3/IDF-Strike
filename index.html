@@ -60,7 +60,7 @@
     </div>
   </div>
 
-  <div id="menu" class="screen">
+  <div id="menu" class="screen hidden">
     <div class="menu-inner">
       <div class="title-block">
         <div class="subtitle">OPERATION SWORDS OF IRON</div>
@@ -69,7 +69,11 @@
       </div>
       <div id="class-list"></div>
       <div class="menu-bottom">
-        <button id="deploy-btn" disabled>SELECT A CLASS</button>
+        <div class="deploy-col">
+          <button id="deploy-btn" disabled>SELECT A CLASS</button>
+          <div class="q-label">GRAPHICS QUALITY</div>
+          <div id="quality"></div>
+        </div>
         <div class="controls">
           <div><kbd>W A S D</kbd> Move</div>
           <div><kbd>Shift</kbd> Sprint / Hold breath (scoped)</div>
@@ -105,7 +109,28 @@
     </div>
   </div>
 
-  <script src="https://unpkg.com/three@0.149.0/build/three.min.js"></script>
-  <script src="game.js"></script>
+  <div id="loading" class="screen">
+    <div class="load-inner">
+      <div class="subtitle">OPERATION SWORDS OF IRON</div>
+      <h1>IDF STRIKE<span>GAZA</span></h1>
+      <div class="load-track"><div id="load-bar"></div></div>
+      <div id="load-text">Loading assets…</div>
+    </div>
+  </div>
+
+  <script>
+    window.__errs = [];
+    addEventListener('error', (e) => __errs.push(String(e.message) + ' @' + (e.filename || '') + ':' + (e.lineno || '')));
+    addEventListener('unhandledrejection', (e) => __errs.push('rejection: ' + (e.reason && (e.reason.stack || e.reason))));
+  </script>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+  <script type="module" src="src/main.js"></script>
 </body>
 </html>
