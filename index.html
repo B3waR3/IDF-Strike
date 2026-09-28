@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IDF Strike: Gaza</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="hud" class="hidden">
+    <div id="crosshair"><div class="ch t"></div><div class="ch b"></div><div class="ch l"></div><div class="ch r"></div><div class="dot"></div></div>
+    <div id="hitmarker"><i></i><i></i></div>
+    <div id="scope"><div class="h"></div><div class="v"></div></div>
+    <div id="damage-vignette"></div>
+    <div id="heal-vignette"></div>
+    <div id="dmg-indicators"></div>
+
+    <div id="top-bar">
+      <div id="wave-info">WAVE 1</div>
+      <div id="objective"></div>
+    </div>
+
+    <div id="minimap-wrap">
+      <canvas id="minimap" width="200" height="200"></canvas>
+      <div id="minimap-label">UAV FEED · ZIK</div>
+    </div>
+
+    <div id="score-box">
+      <div>KILLS <b id="kills">0</b></div>
+      <div>SCORE <b id="score">0</b></div>
+      <div>HOSTILES <b id="hostiles">0</b></div>
+    </div>
+
+    <div id="killfeed"></div>
+
+    <div id="vitals">
+      <div class="bar-label">HEALTH <span id="hp-text">100</span></div>
+      <div class="bar"><div id="hp-bar"></div></div>
+      <div class="bar-label">ARMOR <span id="ar-text">100</span></div>
+      <div class="bar"><div id="ar-bar"></div></div>
+      <div id="gear-line">
+        <span class="gear-item">IFAK ×<b id="ifak">3</b> <small>[H]</small></span>
+        <span class="gear-item">FRAG ×<b id="nades">2</b> <small>[G]</small></span>
+      </div>
+    </div>
+
+    <div id="weapon-panel">
+      <div id="weapon-name"></div>
+      <div id="weapon-cal"></div>
+      <div id="ammo"><span id="mag">30</span><span id="reserve">/ 180</span></div>
+      <div id="firemode"></div>
+      <div id="weapon-slots"></div>
+    </div>
+
+    <div id="prompt"></div>
+    <div id="center-msg"></div>
+    <div id="progress" class="hidden">
+      <div id="progress-label"></div>
+      <div class="bar"><div id="progress-bar"></div></div>
+    </div>
+  </div>
+
+  <div id="menu" class="screen">
+    <div class="menu-inner">
+      <div class="title-block">
+        <div class="subtitle">OPERATION SWORDS OF IRON</div>
+        <h1>IDF STRIKE<span>GAZA</span></h1>
+        <p class="tagline">Choose your class. Clear the sector. Hold until extraction.</p>
+      </div>
+      <div id="class-list"></div>
+      <div class="menu-bottom">
+        <button id="deploy-btn" disabled>SELECT A CLASS</button>
+        <div class="controls">
+          <div><kbd>W A S D</kbd> Move</div>
+          <div><kbd>Shift</kbd> Sprint / Hold breath (scoped)</div>
+          <div><kbd>Space</kbd> Jump</div>
+          <div><kbd>C</kbd> Crouch</div>
+          <div><kbd>LMB</kbd> Fire</div>
+          <div><kbd>RMB</kbd> Aim down sights</div>
+          <div><kbd>R</kbd> Reload</div>
+          <div><kbd>1</kbd>/<kbd>2</kbd>/<kbd>Q</kbd>/<kbd>Wheel</kbd> Switch weapon</div>
+          <div><kbd>B</kbd> Fire mode</div>
+          <div><kbd>G</kbd> Frag grenade</div>
+          <div><kbd>H</kbd> Use IFAK</div>
+          <div><kbd>F</kbd> Resupply at Merkava</div>
+          <div><kbd>Esc</kbd> Pause</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="pause" class="screen hidden">
+    <div class="panel">
+      <h2>PAUSED</h2>
+      <button id="resume-btn">RESUME</button>
+      <button id="quit-btn" class="secondary">ABORT MISSION</button>
+    </div>
+  </div>
+
+  <div id="gameover" class="screen hidden">
+    <div class="panel">
+      <h2 id="go-title">KIA</h2>
+      <div id="go-stats"></div>
+      <button id="redeploy-btn">REDEPLOY</button>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/three@0.149.0/build/three.min.js"></script>
+  <script src="game.js"></script>
+</body>
+</html>
