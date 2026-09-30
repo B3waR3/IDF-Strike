@@ -32,6 +32,9 @@
     </div>
 
     <div id="killfeed"></div>
+    <div id="squad"></div>
+    <div id="mount"></div>
+    <div id="nade-timer"><small>FRAG LIVE</small><b>4.0</b></div>
 
     <div id="vitals">
       <div class="bar-label">HEALTH <span id="hp-text">100</span></div>
@@ -73,19 +76,36 @@
           <button id="deploy-btn" disabled>SELECT A CLASS</button>
           <div class="q-label">GRAPHICS QUALITY</div>
           <div id="quality"></div>
-          <button id="credits-btn" class="secondary">CREDITS</button>
+          <div class="q-label">SQUAD TEAMMATES</div>
+          <div id="squad-size"></div>
+          <div class="q-label">CO-OP · UP TO 4</div>
+          <input id="net-name" maxlength="16" placeholder="Your name" autocomplete="off">
+          <div class="menu-row">
+            <button id="net-host" class="secondary" type="button">HOST</button>
+            <button id="net-join" class="secondary" type="button">JOIN</button>
+          </div>
+          <input id="net-addr" placeholder="Host address, e.g. 192.168.1.20" autocomplete="off">
+          <div id="net-status">Host a mission, or join the address the host is shown. Same Wi-Fi works directly. From another house, connect Tailscale or ZeroTier first, then use the address it gives the host.</div>
+          <div class="menu-row">
+            <button id="credits-btn" class="secondary">CREDITS</button>
+            <button id="exit-btn" class="secondary hidden">QUIT</button>
+          </div>
         </div>
         <div class="controls">
           <div><kbd>W A S D</kbd> Move</div>
           <div><kbd>Shift</kbd> Sprint / Hold breath (scoped)</div>
           <div><kbd>Space</kbd> Jump</div>
           <div><kbd>C</kbd> Crouch</div>
+          <div><kbd>Z</kbd> Prone</div>
           <div><kbd>LMB</kbd> Fire</div>
-          <div><kbd>RMB</kbd> Aim down sights</div>
+          <div><kbd>RMB</kbd> Aim down sights · mounts at corners and ledges</div>
           <div><kbd>R</kbd> Reload</div>
-          <div><kbd>1</kbd>/<kbd>2</kbd>/<kbd>Q</kbd>/<kbd>Wheel</kbd> Switch weapon</div>
+          <div><kbd>1</kbd>/<kbd>2</kbd>/<kbd>3</kbd>/<kbd>Q</kbd>/<kbd>Wheel</kbd> Switch weapon</div>
+          <div><kbd>3</kbd> Karambit · LMB stabs, a hit in the back kills</div>
+          <div><kbd>I</kbd> Inspect weapon</div>
           <div><kbd>B</kbd> Fire mode</div>
-          <div><kbd>G</kbd> Frag grenade</div>
+          <div><kbd>V</kbd> Third person</div>
+          <div><kbd>G</kbd> Frag grenade · tap to throw, hold to cook (4 s fuse)</div>
           <div><kbd>H</kbd> Use IFAK</div>
           <div><kbd>F</kbd> Resupply at Merkava</div>
           <div><kbd>Esc</kbd> Pause</div>
@@ -137,8 +157,8 @@
   <script type="importmap">
     {
       "imports": {
-        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
-        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+        "three": "./vendor/three/build/three.module.js",
+        "three/addons/": "./vendor/three/examples/jsm/"
       }
     }
   </script>

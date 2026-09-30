@@ -118,7 +118,18 @@ function rotateBoneToward(bone, childPos, desired) {
   bone.quaternion.copy(_q3.multiply(_q1));
   bone.updateMatrixWorld(true);
 }
-export function solveIK(upper, lower, end, target, pole) {
+// Elbow data for `solveIK`: the upper arm's bend axis, measured from the rest pose (which must be bent).
+export function armHinge(upper, lower, end) {
+  const s = upper.getWorldPosition(new THREE.Vector3()), e = lower.getWorldPosition(new THREE.Vector3());
+  const w = end.getWorldPosition(new THREE.Vector3());
+  const axis = new THREE.Vector3().crossVectors(e.clone().sub(s), w.sub(e)).normalize();
+  return { axisL: axis.applyQuaternion(upper.getWorldQuaternion(new THREE.Quaternion()).invert()), lowerRest: lower.quaternion.clone() };
+}
+const _u = new THREE.Vector3(), _n = new THREE.Vector3(), _h = new THREE.Vector3(), _wr = new THREE.Vector3(), _hx = new THREE.Vector3();
+// With `hinge` the upper arm is also rolled so the elbow only bends about its own axis, which keeps the
+// forearm's roll anatomical and makes the result independent of the previous frame.
+export function solveIK(upper, lower, end, target, pole, hinge = null) {
+  if (hinge) { lower.quaternion.copy(hinge.lowerRest); lower.updateMatrixWorld(true); }
   upper.getWorldPosition(_a);
   lower.getWorldPosition(_b);
   end.getWorldPosition(_c);
@@ -132,10 +143,23 @@ export function solveIK(upper, lower, end, target, pole) {
   _pv.addScaledVector(dir, -_pv.dot(dir)).normalize();
   _elbow.copy(_a).addScaledVector(dir, Math.cos(ang) * la).addScaledVector(_pv, Math.sin(ang) * la);
   _aSave.copy(_a);
+  _wr.copy(_a).addScaledVector(dir, d);
   rotateBoneToward(upper, _b, _elbow);
+  if (hinge) {
+    _u.copy(_elbow).sub(_aSave).normalize();
+    _n.copy(_wr).sub(_elbow).cross(_u).negate().normalize();
+    upper.getWorldQuaternion(_q1);
+    _h.copy(hinge.axisL).applyQuaternion(_q1);
+    _h.addScaledVector(_u, -_h.dot(_u)).normalize();
+    const roll = Math.atan2(_hx.crossVectors(_h, _n).dot(_u), _h.dot(_n));
+    _q1.premultiply(_dq.setFromAxisAngle(_u, roll));
+    upper.parent.getWorldQuaternion(_q3).invert();
+    upper.quaternion.copy(_q3.multiply(_q1));
+    upper.updateMatrixWorld(true);
+  }
   lower.getWorldPosition(_b);
   end.getWorldPosition(_c);
-  rotateBoneToward(lower, _c, _aSave.addScaledVector(dir, d));
+  rotateBoneToward(lower, _c, _wr);
 }
 
 // ------------------------------------------------------------ hands
@@ -170,10 +194,33 @@ export function analyzeHand(B, side) {
       const off = pos(child).sub(pos(b));
       const moved = off.clone().applyAxisAngle(axisW, 0.3);
       const sign = moved.sub(off).dot(palm) >= 0 ? 1 : -1;
-      H.joints.push({ b, rest: b.quaternion.clone(), axis: axisW.applyQuaternion(bq).multiplyScalar(sign), thumb: f === 'Thumb', i });
+      H.joints.push({ b, rest: b.quaternion.clone(), axis: axisW.applyQuaternion(bq).multiplyScalar(sign), thumb: f === 'Thumb', index: f === 'Index', i });
     }
   }
   return H;
+}
+// Lets `orientHand` pass the hand's roll about the forearm on to the CC forearm twist bones, so the
+// sleeve and glove cuff turn gradually from elbow to wrist (pronation/supination) instead of wringing
+// at the wrist. `k` is each bone's share; they are chained, so the second one ends up at 0.7 of the roll.
+export function forearmTwist(H, B, side) {
+  const hand = H.hand;
+  const axisW = hand.getWorldPosition(new THREE.Vector3()).sub(hand.parent.getWorldPosition(new THREE.Vector3())).normalize();
+  const bones = [[`${side}_ForearmTwist01`, 0.25], [`${side}_ForearmTwist02`, 0.45]].filter(([n]) => B[n]).map(([n, k]) => ({
+    b: B[n], k, rest: B[n].quaternion.clone(),
+    axis: axisW.clone().applyQuaternion(B[n].parent.getWorldQuaternion(new THREE.Quaternion()).invert()),
+  }));
+  H.twist = { bones, handRest: hand.quaternion.clone(), axis: hand.position.clone().normalize() };
+}
+const _tw = new THREE.Quaternion();
+function spreadTwist(T, handQ) {
+  // Hand rotation away from rest in the forearm's frame; its component about the forearm axis is the roll.
+  _tw.copy(T.handRest).invert().premultiply(handQ);
+  const a = T.axis;
+  let roll = 2 * Math.atan2(_tw.x * a.x + _tw.y * a.y + _tw.z * a.z, _tw.w);
+  if (roll > Math.PI) roll -= 2 * Math.PI;
+  else if (roll < -Math.PI) roll += 2 * Math.PI;
+  for (const t of T.bones) t.b.quaternion.setFromAxisAngle(t.axis, roll * t.k).multiply(t.rest);
+  return roll;
 }
 const _m1 = new THREE.Matrix4(), _m2 = new THREE.Matrix4(), _x = new THREE.Vector3(), _y = new THREE.Vector3(), _z = new THREE.Vector3();
 // Orients the hand so its fingers point along `alongW` with the palm facing `palmW` (world space).
@@ -189,11 +236,14 @@ export function orientHand(H, alongW, palmW) {
   _q.setFromRotationMatrix(_m2);
   H.hand.parent.getWorldQuaternion(_q2).invert();
   H.hand.quaternion.copy(_q2.multiply(_q));
-  H.hand.updateMatrixWorld(true);
+  if (H.twist) H.roll = spreadTwist(H.twist, H.hand.quaternion);
+  H.hand.parent.updateMatrixWorld(true);
 }
-export function curlFingers(H, curl, thumbCurl = curl * 0.5, spread = 1) {
+// `open` (0..1) relaxes every finger except the index, e.g. to let a karambit spin on the index finger.
+export function curlFingers(H, curl, thumbCurl = curl * 0.5, spread = 1, open = 0) {
   for (const j of H.joints) {
-    const a = j.thumb ? thumbCurl * (j.i === 1 ? 0.3 : 0.8) : curl * (j.i === 1 ? 1 : j.i === 2 ? 1.25 : 0.9) * spread;
+    const c = j.index ? curl : curl + (0.12 - curl) * open, tc = thumbCurl + (0.1 - thumbCurl) * open;
+    const a = j.thumb ? tc * (j.i === 1 ? 0.3 : 0.8) : c * (j.i === 1 ? 1 : j.i === 2 ? 1.25 : 0.9) * spread;
     j.b.quaternion.copy(j.rest).multiply(_q.setFromAxisAngle(j.axis, a));
   }
   H.hand.updateMatrixWorld(true);

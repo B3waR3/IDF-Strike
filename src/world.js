@@ -186,6 +186,22 @@ function driftTexture() {
 //  INSTANCE BATCHES
 // ============================================================
 const _p = new THREE.Vector3(), _q = new THREE.Quaternion(), _s = new THREE.Vector3(), _e = new THREE.Euler(), _c = new THREE.Color();
+// Batches draw with their own copies of the shared materials. three.js keeps one shader state per
+// material, so alternating instanced/plain (or coloured/uncoloured) users forces a program lookup per draw.
+const instMats = new Map();
+function instanceMaterial(m, colored) {
+  if (Array.isArray(m)) return m.map((x) => instanceMaterial(x, colored));
+  const key = m.uuid + (colored ? ':c' : '');
+  let copy = instMats.get(key);
+  if (!copy) {
+    copy = m.clone();
+    // clone() drops the world-space tiling shader, which stretches a texture across a whole street.
+    copy.onBeforeCompile = m.onBeforeCompile;
+    copy.customProgramCacheKey = m.customProgramCacheKey;
+    instMats.set(key, copy);
+  }
+  return copy;
+}
 class Batch {
   constructor(geo, mat, cast = true) { this.geo = geo; this.mat = mat; this.cast = cast; this.m = []; this.c = []; }
   add(x, y, z, sx, sy, sz, ry = 0, color = null, rx = 0, rz = 0, order = 'XYZ') {
@@ -197,9 +213,10 @@ class Batch {
   addMatrix(mx, color = null) { this.m.push(mx); this.c.push(color); }
   build(scene) {
     if (!this.m.length) return null;
-    const im = new THREE.InstancedMesh(this.geo, this.mat, this.m.length);
+    const colored = this.c.some((c) => c !== null);
+    const im = new THREE.InstancedMesh(this.geo, instanceMaterial(this.mat, colored), this.m.length);
     this.m.forEach((m, i) => im.setMatrixAt(i, m));
-    if (this.c.some((c) => c !== null)) this.c.forEach((c, i) => im.setColorAt(i, _c.set(c ?? 0xffffff)));
+    if (colored) this.c.forEach((c, i) => im.setColorAt(i, _c.set(c ?? 0xffffff)));
     im.castShadow = this.cast;
     im.receiveShadow = true;
     im.computeBoundingSphere();
@@ -210,6 +227,17 @@ class Batch {
 
 const unitBox = new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0);
 const unitBoxC = new THREE.BoxGeometry(1, 1, 1);
+// Building block with its four walls and its top/bottom as two contiguous groups ([wall, roof] materials),
+// so a building batch costs two draw calls instead of one per face.
+const wallBox = (() => {
+  const g = unitBox.clone(), src = g.index.array, out = new src.constructor(src.length);
+  [0, 1, 4, 5, 2, 3].forEach((face, i) => out.set(src.subarray(face * 6, face * 6 + 6), i * 6));
+  g.setIndex(new THREE.BufferAttribute(out, 1));
+  g.clearGroups();
+  g.addGroup(0, 24, 0);
+  g.addGroup(24, 12, 1);
+  return g;
+})();
 const unitPlane = new THREE.PlaneGeometry(1, 1);
 
 function jitter(geo, amt, seed) {
@@ -253,8 +281,8 @@ function makeBatches() {
   frond.computeVertexNormals();
 
   B = {
-    walls: M.walls.map((wm) => new Batch(unitBox, [wm, wm, M.roof, M.roof, wm, wm])),
-    damaged: M.damaged.map((wm) => new Batch(unitBox, [wm, wm, M.roof, M.roof, wm, wm])),
+    walls: M.walls.map((wm) => new Batch(wallBox, [wm, M.roof])),
+    damaged: M.damaged.map((wm) => new Batch(wallBox, [wm, M.roof])),
     pads: new Batch(unitBox, M.pavement),
     streets: new Batch(unitBox, M.asphalt, false),
     trim: new Batch(unitBoxC, M.trim),
@@ -281,7 +309,7 @@ function makeBatches() {
     tire: new Batch(tire, M.rubber),
     frond: new Batch(frond, M.frond),
     drift: new Batch(unitPlane, M.sandDrift, false),
-    far: M.walls.map((wm) => new Batch(unitBox, [wm, wm, M.roof, M.roof, wm, wm], false)),
+    far: M.walls.map((wm) => new Batch(wallBox, [wm, M.roof], false)),
   };
 }
 

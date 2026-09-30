@@ -216,6 +216,11 @@ export function playGear() {
   const t = ctx.currentTime, d = chain(0, 0.02);
   burst(d, t, { type: 'bandpass', f: 2200, q: 1.5, dur: 0.12, vol: 0.05, attack: 0.03 });
 }
+export function playSwoosh() {
+  if (!ctx) return;
+  const t = ctx.currentTime, d = chain(0, 0);
+  burst(d, t, { type: 'bandpass', f: 2400, q: 0.6, dur: 0.14, vol: 0.16, attack: 0.03, fEnd: 700 });
+}
 export function playHit(kill, head) {
   if (!ctx) return;
   const t = ctx.currentTime, d = chain(0, 0);
@@ -234,11 +239,18 @@ export function playHeartbeat(v) {
   osc(d, t, { f0: 60, f1: 35, dur: 0.12, vol: 0.5 * v });
   osc(d, t + 0.16, { f0: 55, f1: 32, dur: 0.12, vol: 0.35 * v });
 }
-export function playBandage() {
+// Ripping the bandage pack open.
+export function playTear() {
   if (!ctx) return;
-  const t = ctx.currentTime, d = chain(0, 0.05);
-  for (let i = 0; i < 6; i++) burst(d, t + i * 0.3 + rand(0, 0.1), { type: 'bandpass', f: rand(2500, 4500), q: 1.2, dur: 0.18, vol: 0.12, attack: 0.04 });
-  burst(d, t + 0.1, { type: 'highpass', f: 3000, dur: 0.4, vol: 0.12, attack: 0.1 });
+  const t = ctx.currentTime, d = chain(0, 0.03);
+  burst(d, t, { type: 'bandpass', f: 3400, q: 0.8, dur: 0.22, vol: 0.2, attack: 0.01, fEnd: 1300 });
+  burst(d, t + 0.04, { type: 'highpass', f: 5200, dur: 0.12, vol: 0.08 });
+}
+// One turn of elastic bandage being pulled around the arm.
+export function playWrap() {
+  if (!ctx) return;
+  const t = ctx.currentTime, d = chain(0, 0.03);
+  burst(d, t, { type: 'bandpass', f: rand(800, 1100), q: 1.3, dur: 0.32, vol: 0.08, attack: 0.09, fEnd: 1700 });
 }
 export function playPin() {
   if (!ctx) return;

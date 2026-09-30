@@ -3,8 +3,13 @@ import { loadAssets, assets } from './assets.js';
 import { createRenderer, createPipeline, QUALITY, LAYER_FX, LAYER_HITBOX } from './gfx.js';
 import { initEffects, updateEffects, spawnParticle, spawnTracer, addDecal, clearDecals, impactFx, bloodFx, explosionFx, spawnCasing, TEX } from './effects.js';
 import { buildWorld, world, HALF, colliders, mapRects, shafts, raycastWorld, hasLOS, inSunlight, resolveCollisions, groundHeightAt, buildNav, updateFlow, flowDir } from './world.js';
-import { createCharacter } from './characters.js';
-import { buildViewModel } from './viewmodels.js';
+import { createCharacter, createPlayerBody } from './characters.js';
+import { singlePassTransparent } from './merge.js';
+import { buildViewModel, buildGrenadeViewModel, buildMedViewModel, NADE_TIMING, STAB_TIMING } from './viewmodels.js';
+import { MED_TIMING } from './bandage.js';
+import { makeGrenadeMesh } from './grenade.js';
+import { createSquad, MAX_BOTS } from './squad.js';
+import { createNet } from './net.js';
 import * as SFX from './audio.js';
 
 // ============================================================
@@ -12,46 +17,53 @@ import * as SFX from './audio.js';
 // ============================================================
 const WEAPONS = {
   tavor: {
-    name: 'IWI Tavor TAR-21', caliber: '5.56×45mm NATO · bullpup', type: 'rifle', model: 'tavor',
+    name: 'IWI Tavor TAR-21', tag: 'TAR-21', caliber: '5.56×45mm NATO · bullpup', type: 'rifle', model: 'tavor',
     mag: 30, reserveMags: 6, chamber: true, rpm: 850, damage: 32, headMult: 2.4, range: 250,
     spread: 0.035, adsSpread: 0.003, bloomPerShot: 0.006, recoil: 0.011,
     reload: 2.3, reloadEmpty: 2.9, modes: ['AUTO', 'SEMI'], adsFov: 50, adsTime: 0.18, tracerEvery: 3,
     optic: 'Reflex sight · suppressor', sound: { cut: 3600, dur: 0.16, thump: 130, gain: 0.9 },
   },
   m4: {
-    name: 'Colt M4A1 (RIS II)', caliber: '5.56×45mm NATO', type: 'rifle', model: 'm4',
+    name: 'Colt M4A1 (RIS II)', tag: 'M4A1', caliber: '5.56×45mm NATO', type: 'rifle', model: 'm4',
     mag: 30, reserveMags: 6, chamber: true, rpm: 800, damage: 31, headMult: 2.4, range: 250,
     spread: 0.038, adsSpread: 0.0035, bloomPerShot: 0.006, recoil: 0.012,
     reload: 2.1, reloadEmpty: 2.7, modes: ['AUTO', 'SEMI'], adsFov: 50, adsTime: 0.17, tracerEvery: 3,
     optic: 'EOTech holographic sight', sound: { cut: 3800, dur: 0.15, thump: 140, gain: 0.9 },
   },
   negev: {
-    name: 'FN MAG 58', caliber: '7.62×51mm NATO · belt-fed', type: 'lmg', model: 'negev',
+    name: 'FN MAG 58', tag: 'MAG 58', caliber: '7.62×51mm NATO · belt-fed', type: 'lmg', model: 'negev',
     mag: 100, reserveMags: 3, chamber: false, rpm: 650, damage: 40, headMult: 2.2, range: 300,
     spread: 0.06, adsSpread: 0.011, bloomPerShot: 0.004, recoil: 0.014, moveMult: 0.9,
     reload: 5.2, reloadEmpty: 6.0, modes: ['AUTO', 'SEMI'], adsFov: 55, adsTime: 0.32, tracerEvery: 2,
     optic: 'Iron sights · bipod', sound: { cut: 2600, dur: 0.22, thump: 90, gain: 1.05 },
   },
   m24: {
-    name: 'M24 SWS', caliber: '7.62×51mm NATO · bolt-action', type: 'sniper', model: 'm24',
+    name: 'M24 SWS', tag: 'M24', caliber: '7.62×51mm NATO · bolt-action', type: 'sniper', model: 'm24',
     mag: 5, reserveMags: 6, chamber: false, rpm: 48, damage: 140, headMult: 3, range: 800,
     spread: 0.09, adsSpread: 0.0, bloomPerShot: 0, recoil: 0.045, scope: true,
     reload: 3.4, reloadEmpty: 3.8, modes: ['BOLT'], adsFov: 14, adsTime: 0.3, tracerEvery: 0,
     optic: 'Leupold Mark 4 10× scope', sound: { cut: 2800, dur: 0.55, thump: 65, gain: 1.25 },
   },
   glock: {
-    name: 'Glock 17', caliber: '9×19mm Parabellum', type: 'pistol', model: 'glock',
+    name: 'Glock 17', tag: 'G17', caliber: '9×19mm Parabellum', type: 'pistol', model: 'glock',
     mag: 17, reserveMags: 4, chamber: true, rpm: 420, damage: 25, headMult: 2, range: 50,
     spread: 0.03, adsSpread: 0.007, bloomPerShot: 0.012, recoil: 0.02,
     reload: 1.5, reloadEmpty: 1.9, modes: ['SEMI'], adsFov: 62, adsTime: 0.12, tracerEvery: 0,
     optic: 'Iron sights', sound: { cut: 4000, dur: 0.1, thump: 190, gain: 0.7 },
   },
   jericho: {
-    name: 'IWI Jericho 941', caliber: '9×19mm Parabellum', type: 'pistol', model: 'jericho',
+    name: 'IWI Jericho 941', tag: 'JERICHO', caliber: '9×19mm Parabellum', type: 'pistol', model: 'jericho',
     mag: 16, reserveMags: 4, chamber: true, rpm: 380, damage: 27, headMult: 2, range: 50,
     spread: 0.028, adsSpread: 0.006, bloomPerShot: 0.012, recoil: 0.022,
     reload: 1.6, reloadEmpty: 2.0, modes: ['SEMI'], adsFov: 62, adsTime: 0.12, tracerEvery: 0,
     optic: 'Iron sights', sound: { cut: 3800, dur: 0.11, thump: 180, gain: 0.75 },
+  },
+  karambit: {
+    name: 'Karambit', tag: 'KNIFE', caliber: 'Melee', type: 'melee', model: 'karambit',
+    mag: 1, reserveMags: 0, chamber: false, rpm: 120, damage: 75, headMult: 1, range: 1.8,
+    spread: 0.01, adsSpread: 0.01, bloomPerShot: 0, recoil: 0, moveMult: 1.06,
+    reload: 1, reloadEmpty: 1, modes: ['STAB'], adsFov: 75, adsTime: 0.2, tracerEvery: 0,
+    optic: 'Claw blade · a stab in the back kills', sound: null,
   },
 };
 
@@ -116,6 +128,7 @@ const randInt = (a, b) => Math.floor(rand(a, b + 1));
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const lerp = (a, b, t) => a + (b - a) * t;
 const approach = (v, t, s) => (v < t ? Math.min(t, v + s) : Math.max(t, v - s));
+const smoothstep = (t) => { t = clamp(t, 0, 1); return t * t * (3 - 2 * t); };
 const $ = (id) => document.getElementById(id);
 const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
 const UP = V(0, 1, 0);
@@ -211,7 +224,7 @@ function updateSun(center) {
 const player = {
   pos: V(), vel: V(), vy: 0, onGround: true,
   yaw: 0, pitch: 0, recoilP: 0, hp: 100, armor: 100, armorMax: 100, ifaks: 3, frags: 2,
-  crouch: false, eye: 1.65, sprinting: false, cls: null, weapons: [], cur: 0,
+  crouch: false, prone: false, eye: 1.65, sprinting: false, cls: null, weapons: [], cur: 0,
   kills: 0, headshots: 0, score: 0, shots: 0, hits: 0,
 };
 const S = {
@@ -220,7 +233,12 @@ const S = {
   adsT: 0, bloom: 0, kick: 0, nadeCD: 0, resupplyCD: 0, bobT: 0, shake: 0, sprintT: 0,
   breath: 4, swayT: 0, flashT: 0, hurtT: 0, flowT: 0, time: 0, msgT: 0, triggerFresh: false,
   supp: 0, flashW: 0, landDip: 0, airVy: 0, lastStep: 0, punchP: 0, punchY: 0, beatT: 0, sunT: 0, inSun: 1,
+  thirdPerson: localStorage.getItem('idf-tp') === '1', tpK: 0, camD: 2, tpDead: false, deadT: 0, inspectT: -1,
 };
+// Third-person body; created once the models have loaded.
+let body = null;
+// True while the over-the-shoulder camera is in use (scoped ADS drops back to first person).
+const tpActive = () => S.tpK > 0.5;
 const keys = {};
 const mouse = { left: false, right: false };
 const vmSway = V();
@@ -229,16 +247,29 @@ let mouseDX = 0, mouseDY = 0;
 const enemies = [], grenades = [], rockets = [], pickups = [];
 let enemyHitMeshes = [];
 
+let botCount = clamp(parseInt(localStorage.getItem('idf-bots') ?? '0', 10) || 0, 0, MAX_BOTS);
+const squad = createSquad({
+  scene, player, enemies, WEAPONS,
+  damageEnemy: (...a) => damageEnemy(...a),
+  onDown: (b) => flashMsg(`${b.name.toUpperCase()} IS DOWN\n<small>Reinforced when the wave is cleared</small>`, 2),
+});
+
 const curW = () => player.weapons[player.cur];
 function makeWeapon(id) {
   const def = WEAPONS[id];
-  return { id, def, mag: def.mag + (def.chamber ? 1 : 0), reserve: def.mag * def.reserveMags, mode: 0, shotN: 0, model: buildViewModel(def.model, vmRoot) };
+  const melee = def.type === 'melee';
+  return {
+    id, def, mag: melee ? 0 : def.mag + (def.chamber ? 1 : 0), reserve: melee ? 0 : def.mag * def.reserveMags,
+    mode: 0, shotN: 0, model: buildViewModel(def.model, vmRoot),
+  };
 }
 
 // ============================================================
 //  ENEMIES
 // ============================================================
 let glintMat = null;
+let enemySeq = 1, nadeSeq = 1, rocketSeq = 1;
+let net = null;
 function pickEnemyType() {
   const w = S.wave;
   const pool = [['hamas', 50], ['pij', 30]];
@@ -258,7 +289,7 @@ function spawnEnemy() {
   const s = cand[randInt(0, cand.length - 1)];
   const ch = createCharacter(typeId, t.gun);
   const e = {
-    t, typeId, ch, hp: t.hp * (1 + (S.wave - 1) * 0.03),
+    t, typeId, nid: enemySeq++, ch, hp: t.hp * (1 + (S.wave - 1) * 0.03),
     pos: V(s.x + rand(-0.3, 0.3), s.y, s.z + rand(-0.3, 0.3)),
     rot: rand(0, Math.PI * 2), emerge: 1.4, dead: false, deathT: 0, removeT: 12, fallDir: 1,
     losT: rand(0, 0.3), vis: false, seen: false, reactT: 0, fireT: 0, burstLeft: 0,
@@ -297,10 +328,6 @@ function updateEnemy(e, dt) {
   const ch = e.ch, root = ch.root;
   if (e.dead) {
     e.deathT += dt;
-    const p = Math.min(1, e.deathT / 0.75);
-    root.rotation.x = -p * p * 1.5 * e.fallDir;
-    root.rotation.z = p * p * e.fallRoll;
-    root.position.y = e.pos.y - p * 0.05;
     ch.update(dt, 0, 0, false);
     e.removeT -= dt;
     if (e.removeT <= 0) removeEnemy(e);
@@ -315,18 +342,40 @@ function updateEnemy(e, dt) {
   }
   const t = e.t;
   eEye.set(e.pos.x, e.pos.y + 1.6, e.pos.z);
-  pEye.set(player.pos.x, player.pos.y + player.eye - 0.15, player.pos.z);
-  const dx = player.pos.x - e.pos.x, dz = player.pos.z - e.pos.z;
-  const dist = Math.hypot(dx, dz);
 
   e.losT -= dt;
   if (e.losT <= 0) {
     e.losT = rand(0.18, 0.3);
-    const vis = S.state === 'playing' && dist < t.range && hasLOS(eEye, pEye);
-    if (vis && !e.seen) { e.seen = true; e.reactT = t.react * rand(0.7, 1.3); e.burstLeft = 0; e.fireT = 0; }
+    // Engage the nearest visible soldier: the player or a squad bot (the player is slightly preferred).
+    let best = null;
+    if (S.state === 'playing' || (net && net.isHost)) {
+      const cands = [player, ...squad.alive(), ...(net ? net.targets() : [])]
+        .filter((c) => c !== player || S.state === 'playing')
+        .map((c) => ({ c, d: Math.hypot(c.pos.x - e.pos.x, c.pos.z - e.pos.z) * (c === player ? 0.85 : 1) }))
+        .filter((o) => o.d < t.range)
+        .sort((a, b) => a.d - b.d);
+      for (const { c } of cands) {
+        if (hasLOS(eEye, pEye.set(c.pos.x, c.pos.y + c.eye - 0.15, c.pos.z))) { best = c; break; }
+      }
+    }
+    const vis = !!best;
+    if (vis && (!e.seen || best !== e.tgt)) {
+      // Switching between targets already in view is quicker than reacting to a new contact.
+      e.reactT = t.react * rand(0.7, 1.3) * (e.seen ? 0.5 : 1);
+      e.seen = true; e.burstLeft = 0; e.fireT = 0;
+    }
     if (!vis) { e.seen = false; e.aimT = Math.min(e.aimT, 0); }
     e.vis = vis;
+    if (best) e.tgt = best;
   }
+  if (!e.tgt || (e.tgt !== player && !e.tgt.alive) || (e.tgt === player && S.state !== 'playing')) {
+    e.tgt = (net && net.targets().find((h) => h.alive)) || player;
+    if (e.vis) { e.vis = e.seen = false; }
+  }
+  const T = e.tgt;
+  pEye.set(T.pos.x, T.pos.y + T.eye - 0.15, T.pos.z);
+  const dx = T.pos.x - e.pos.x, dz = T.pos.z - e.pos.z;
+  const dist = Math.hypot(dx, dz);
 
   let wantMove = true, speedMul = 1;
   moveDir.set(0, 0, 0);
@@ -342,7 +391,7 @@ function updateEnemy(e, dt) {
       } else wantMove = false;
     } else speedMul = 0.5;
   }
-  if (S.state !== 'playing') wantMove = false;
+  if (S.state !== 'playing' && !(net && net.isHost)) wantMove = false;
   if (wantMove && moveDir.lengthSq() === 0) {
     if (!flowDir(e.pos.x, e.pos.z, moveDir)) moveDir.set(dx, 0, dz).normalize();
   }
@@ -390,8 +439,8 @@ function enemyAttack(e, dt, dist) {
     }
     if (e.aimT >= t.aimTime) {
       e.aimT = -t.cooldown;
-      const sp = Math.hypot(player.vel.x, player.vel.z);
-      const chance = 0.72 * (sp > 1 ? 0.5 : 1) * (player.crouch ? 0.85 : 1);
+      const T = e.tgt, sp = Math.hypot(T.vel.x, T.vel.z);
+      const chance = 0.72 * (sp > 1 ? 0.5 : 1) * (T.prone ? 0.5 : T.crouch ? 0.85 : 1);
       enemyShot(e, dist, Math.random() < chance, t.dmg);
     }
     return;
@@ -406,9 +455,9 @@ function enemyAttack(e, dt, dist) {
   if (e.burstLeft <= 0) { e.burstLeft = randInt(t.burst[0], t.burst[1]); e.fireT = rand(t.pause[0], t.pause[1]); return; }
   e.burstLeft--;
   e.fireT = t.burstGap;
-  const sp = Math.hypot(player.vel.x, player.vel.z);
-  let chance = t.acc * (1 - Math.min(dist / t.range, 1) * 0.6) * (sp > 1 ? 0.65 : 1) * (player.crouch ? 0.75 : 1) * (1 + (S.wave - 1) * 0.04);
-  if (player.sprinting) chance *= 0.8;
+  const T = e.tgt, sp = Math.hypot(T.vel.x, T.vel.z);
+  let chance = t.acc * (1 - Math.min(dist / t.range, 1) * 0.6) * (sp > 1 ? 0.65 : 1) * (T.prone ? 0.45 : T.crouch ? 0.75 : 1) * (1 + (S.wave - 1) * 0.04);
+  if (T === player && player.sprinting) chance *= 0.8;
   enemyShot(e, dist, Math.random() < Math.min(chance, 0.75), t.dmg * rand(0.8, 1.25));
 }
 
@@ -423,8 +472,10 @@ function enemyMuzzleFlash(from) {
 
 function enemyShot(e, dist, hit, dmg) {
   const from = e.ch.muzzle.getWorldPosition(V());
+  const T = e.tgt;
+  // Near-miss suppression is always measured against the player, whoever the shot was meant for.
   const eye = V(player.pos.x, player.pos.y + player.eye - 0.1, player.pos.z);
-  const target = V(player.pos.x, player.pos.y + player.eye - 0.35, player.pos.z);
+  const target = V(T.pos.x, T.pos.y + T.eye - 0.35, T.pos.z);
   if (!hit) {
     target.x += rand(-1.3, 1.3); target.y += rand(-0.7, 1.0); target.z += rand(-1.3, 1.3);
     const dir = target.clone().sub(from).normalize();
@@ -445,7 +496,9 @@ function enemyShot(e, dist, hit, dmg) {
     }
   } else {
     if (Math.random() < 0.45) spawnTracer(from, target, 0xff9050, 0.02, 380);
-    damagePlayer(dmg, e.pos);
+    if (T === player) damagePlayer(dmg, e.pos);
+    else if (T.net) net.hurt(T.netId, dmg, e.pos, false);
+    else squad.damage(T, dmg, e.pos);
   }
   SFX.playShot(e.t.sound, from);
   enemyMuzzleFlash(from);
@@ -454,8 +507,8 @@ function enemyShot(e, dist, hit, dmg) {
 let rocketMats = null;
 function launchRocket(e, dist) {
   const from = e.ch.muzzle.getWorldPosition(V());
-  const lead = Math.min(dist / 32, 2) * 0.5;
-  const target = V(player.pos.x + player.vel.x * lead + rand(-1.5, 1.5), player.pos.y + 1.0 + rand(-0.5, 0.5), player.pos.z + player.vel.z * lead + rand(-1.5, 1.5));
+  const lead = Math.min(dist / 32, 2) * 0.5, T = e.tgt;
+  const target = V(T.pos.x + T.vel.x * lead + rand(-1.5, 1.5), T.pos.y + 1.0 + rand(-0.5, 0.5), T.pos.z + T.vel.z * lead + rand(-1.5, 1.5));
   const vel = target.sub(from).normalize().multiplyScalar(34);
   if (!rocketMats) rocketMats = {
     body: new THREE.MeshStandardMaterial({ color: 0x3f4a2e, roughness: 0.6, metalness: 0.2 }),
@@ -473,7 +526,7 @@ function launchRocket(e, dist) {
   m.position.copy(from);
   m.lookAt(from.clone().add(vel));
   scene.add(m);
-  rockets.push({ m, vel, life: 5 });
+  rockets.push({ m, vel, life: 5, rid: rocketSeq++ });
   SFX.playRocketLaunch(from);
   for (let i = 0; i < 10; i++) {
     spawnParticle(from.clone(), V(rand(-1.5, 1.5), rand(0, 1), rand(-1.5, 1.5)).addScaledVector(vel, -0.06), { tex: TEX.smoke, color: 0xd0c8b8, size: rand(0.8, 1.4), life: rand(1.5, 2.5), opacity: 0.6, grav: 0.3, grow: 1, drag: 2 });
@@ -481,27 +534,34 @@ function launchRocket(e, dist) {
   enemyMuzzleFlash(from);
 }
 
-function damageEnemy(e, dmg, point, dir, headshot) {
-  if (e.dead) return;
+// `bot` is the squad member who fired, or null for the player.
+function damageEnemy(e, dmg, point, dir, headshot, credit = null) {
+  if (e.dead) return { kill: true, head: !!headshot };
   e.hp -= dmg;
   e.flinch = 0.25;
   if (!e.vis) { e.seen = true; e.vis = true; e.reactT = 0.35; }
   if (point) { bloodFx(point, dir); SFX.playFlesh(point); }
-  if (e.hp <= 0) killEnemy(e, headshot, false, dir);
+  if (e.hp <= 0) killEnemy(e, headshot, false, dir, false, credit);
+  return { kill: !!e.dead, head: !!headshot };
 }
-function killEnemy(e, headshot, byNade, dir) {
+function killEnemy(e, headshot, byNade, dir, blast = false, credit = null) {
   e.dead = true;
+  e.headDead = !!headshot;
   S.alive--;
-  player.kills++;
-  player.score += 100 + (headshot ? 50 : 0) + (byNade ? 25 : 0);
-  if (headshot) player.headshots++;
+  if (credit && credit.remote) { /* the shooter's own client keeps their tally */ }
+  else if (credit) player.score += 25;
+  else {
+    player.kills++;
+    player.score += 100 + (headshot ? 50 : 0) + (byNade ? 25 : 0);
+    if (headshot) player.headshots++;
+  }
   if (e.glint) e.glint.visible = false;
   const fx = Math.sin(e.rot), fz = Math.cos(e.rot);
   e.fallDir = dir && dir.x * fx + dir.z * fz > 0 ? 1 : -1;
   e.fallRoll = rand(-0.3, 0.3);
-  e.ch.die();
+  e.ch.die({ dir: e.fallDir, roll: e.fallRoll, headshot, blast });
   rebuildHitList();
-  addKillfeed(e, headshot, byNade);
+  addKillfeed(e, headshot, byNade, credit);
   const r = Math.random();
   if (r < 0.35) spawnPickup('ammo', e.pos);
   else if (r < 0.47) spawnPickup('ifak', e.pos);
@@ -520,7 +580,9 @@ function updateRockets(dt) {
     const dir = r.vel.clone().normalize();
     const wh = raycastWorld(prev, dir, r.vel.length() * dt);
     const pp = V(player.pos.x, player.pos.y + 1, player.pos.z);
-    const near = r.m.position.distanceTo(pp) < 1.1;
+    const near = r.m.position.distanceTo(pp) < 1.1
+      || squad.alive().some((b) => r.m.position.distanceTo(tmpV.set(b.pos.x, b.pos.y + 1, b.pos.z)) < 1.1)
+      || (net && net.targets().some((h) => r.m.position.distanceTo(tmpV.set(h.pos.x, h.pos.y + 1, h.pos.z)) < 1.1));
     const toP = pp.clone().sub(r.m.position);
     if (toP.length() < 5 && toP.dot(dir) < 0 && !r.whiz) { r.whiz = true; SFX.playWhiz(0); S.supp = Math.min(1, S.supp + 0.4); }
     if (wh || near || r.life <= 0) {
@@ -535,28 +597,82 @@ function updateRockets(dt) {
 // ============================================================
 //  GRENADES & EXPLOSIONS
 // ============================================================
-let nadeMats = null;
-function throwGrenade() {
-  if (player.frags <= 0 || S.nadeCD > 0 || S.reloading || S.ifakT > 0 || S.switchT > 0) return;
-  player.frags--;
-  S.nadeCD = 1.0;
-  S.switchT = 0.45;
+// G pulls the pin and throws; holding G keeps the pin pulled and the grenade cooking in hand.
+// The fuse starts when the pin comes out, so a grenade held for the full fuse goes off in the hand.
+const NADE_FUSE = 4;
+const nade = { phase: null, t: 0, cook: -1, held: false, cocked: false, released: false };
+// Karambit stab. t < 0 is ready; the hit is resolved when the thrust lands.
+const stab = { t: -1 };
+const STAB_DMG = 75, STAB_RANGE = 1.75;
+function startGrenade() {
+  if (S.state !== 'playing' || nade.phase || player.frags <= 0 || S.nadeCD > 0 || S.reloading || S.ifakT > 0 || S.switchT > 0) return;
+  Object.assign(nade, { phase: 'pull', t: 0, cook: -1, held: true, cocked: false, released: false });
+  stab.t = -1;
+  S.boltT = 0;
+  SFX.playGear();
+}
+function nadeHandPos(out) {
+  const f = V(0, 0, -1).applyQuaternion(camera.quaternion);
+  return out.set(player.pos.x, player.pos.y + player.eye - 0.25, player.pos.z).addScaledVector(f, 0.35);
+}
+function launchGrenade(fuse, dropped = false) {
   const dir = V(0, 0, -1).applyQuaternion(camera.quaternion);
-  const pos = camera.position.clone().addScaledVector(dir, 0.6);
-  const vel = dir.multiplyScalar(17).add(V(0, 3.5, 0)).add(player.vel);
-  if (!nadeMats) nadeMats = {
-    body: new THREE.MeshStandardMaterial({ color: 0x3e4630, roughness: 0.55, metalness: 0.3 }),
-    spoon: new THREE.MeshStandardMaterial({ color: 0x8a8a80, roughness: 0.35, metalness: 1 }),
-  };
-  const m = new THREE.Group();
-  const b = new THREE.Mesh(new THREE.SphereGeometry(0.032, 14, 10), nadeMats.body); b.scale.y = 1.15;
-  const fuse = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.012, 0.03, 8), nadeMats.spoon); fuse.position.y = 0.04;
-  m.add(b, fuse);
-  m.children.forEach((c) => (c.castShadow = true));
-  m.position.copy(pos);
-  scene.add(m);
-  grenades.push({ m, pos, vel, fuse: 3.0 });
-  SFX.playPin();
+  let pos, vel;
+  if (dropped) {
+    pos = V(player.pos.x, player.pos.y + 0.9, player.pos.z);
+    vel = V(rand(-1, 1), 1, rand(-1, 1)).add(player.vel);
+  } else {
+    pos = V(player.pos.x, player.pos.y + player.eye, player.pos.z).addScaledVector(dir, 0.6);
+    vel = dir.multiplyScalar(17).add(V(0, 3.5, 0)).add(player.vel);
+  }
+  if (net && net.isClient) {
+    net.send({ t: 'nade', x: pos.x, y: pos.y, z: pos.z, vx: vel.x, vy: vel.y, vz: vel.z, fuse });
+    return;
+  }
+  const g = makeGrenadeMesh();
+  g.spoon.visible = g.ring.visible = false;
+  g.root.position.copy(pos);
+  scene.add(g.root);
+  grenades.push({ m: g.root, pos, vel, fuse, gid: nadeSeq++ });
+}
+function updateGrenade(dt) {
+  if (!nade.phase) return;
+  nade.t += dt;
+  if (nade.cook >= 0 && !nade.released) {
+    nade.cook += dt;
+    if (nade.cook >= NADE_FUSE) {
+      const p = nadeHandPos(V());
+      nade.phase = null;
+      if (net && net.isClient) {
+        net.send({ t: 'boom', x: p.x, y: p.y, z: p.z });
+        explosionFx(p, 1);
+      } else {
+        explode(p, 9, 210, true, UP, V(p.x, groundHeightAt(p.x, p.z, p.y, 0), p.z));
+        damagePlayer(1000, p, true);
+      }
+      S.switchT = 0.45;
+      return;
+    }
+  }
+  const T = NADE_TIMING;
+  if (nade.phase === 'pull') {
+    if (nade.cook < 0 && nade.t >= T.pinOut) { nade.cook = 0; player.frags--; SFX.playPin(); }
+    if (nade.t >= T.pull) { nade.phase = nade.held ? 'hold' : 'throw'; nade.t = 0; }
+  } else if (nade.phase === 'hold') {
+    if (!nade.held) { nade.cocked = nade.t >= T.cock; nade.phase = 'throw'; nade.t = 0; }
+  } else if (nade.phase === 'throw') {
+    if (!nade.released && nade.t >= T.release) {
+      nade.released = true;
+      launchGrenade(NADE_FUSE - nade.cook);
+      SFX.playGear();
+    }
+    if (nade.t >= T.throw) { nade.phase = null; S.switchT = 0.45; S.nadeCD = 0.3; }
+  }
+}
+// Dying with a live grenade in hand drops it at the player's feet.
+function dropLiveGrenade() {
+  if (nade.phase && nade.cook >= 0 && !nade.released) launchGrenade(NADE_FUSE - nade.cook, true);
+  nade.phase = null;
 }
 function updateGrenades(dt) {
   for (let i = grenades.length - 1; i >= 0; i--) {
@@ -610,12 +726,20 @@ function explode(pos, radius, maxDmg, byPlayer, normal, surfPoint) {
       const dmg = maxDmg * (1 - d / radius);
       if (byPlayer) showHitmarker(e.hp - dmg <= 0);
       e.hp -= dmg; e.flinch = 0.5;
-      if (e.hp <= 0) killEnemy(e, false, byPlayer, c.clone().sub(pos).normalize());
+      if (e.hp <= 0) killEnemy(e, false, byPlayer, c.clone().sub(pos).normalize(), true);
     }
   }
   const pc = V(player.pos.x, player.pos.y + 1, player.pos.z);
   const pd = pc.distanceTo(pos);
   if (pd < radius && hasLOS(pos, pc)) damagePlayer(maxDmg * (byPlayer ? 0.6 : 1) * (1 - pd / radius), pos, true);
+  if (net) {
+    for (const h of net.targets()) {
+      const c = V(h.pos.x, h.pos.y + 1, h.pos.z);
+      const d = c.distanceTo(pos);
+      if (d < radius && hasLOS(pos, c)) net.hurt(h.netId, (d < 1.2 ? maxDmg : maxDmg * (byPlayer ? 0.6 : 1) * (1 - d / radius)), pos, true);
+    }
+  }
+  if (!byPlayer) squad.blast(pos, radius, maxDmg);
 }
 
 // ============================================================
@@ -678,9 +802,10 @@ function currentSpread() {
   s *= 1 + (sp / 5) * 1.5 * (1 - S.adsT * 0.6);
   s += (sp / 5) * 0.015 * S.adsT;
   if (!player.onGround) s = s * 2.5 + 0.02;
-  if (player.crouch) s *= 0.7;
+  if (player.prone) s *= 0.45;
+  else if (player.crouch) s *= 0.7;
   s += S.bloom * (1 - S.adsT * 0.5);
-  return s;
+  return s * (1 - 0.35 * mount.k);
 }
 const raycaster = new THREE.Raycaster();
 raycaster.layers.set(LAYER_HITBOX);
@@ -690,22 +815,43 @@ function vmToWorld(m, local, out) {
   m.group.localToWorld(out);
   return camera.localToWorld(out);
 }
+const muzzleWorld = (w, out) => (tpActive() ? body.muzzleWorld(out) : vmToWorld(w.model, w.model.muzzle, out));
+
+// Shot origin and orientation. In third person the crosshair ray is cast from the camera, and the
+// shot travels from the player's eye to whatever that ray hits, so walls behind the player don't count.
+const aimO = V(), aimQ = new THREE.Quaternion(), aimM = new THREE.Matrix4();
+function aimBasis() {
+  if (!tpActive()) { aimO.copy(camera.position); aimQ.copy(camera.quaternion); return; }
+  aimO.set(player.pos.x, player.pos.y + player.eye, player.pos.z);
+  const f = V(0, 0, -1).applyQuaternion(camera.quaternion);
+  const start = camera.position.clone().addScaledVector(f, Math.max(0, aimO.clone().sub(camera.position).dot(f)));
+  const wh = raycastWorld(start, f, 800);
+  raycaster.set(start, f);
+  raycaster.far = wh ? wh.t : 800;
+  const hits = raycaster.intersectObjects(enemyHitMeshes, false);
+  const target = hits.length ? hits[0].point : wh ? wh.point : start.clone().addScaledVector(f, 800);
+  if (target.distanceTo(aimO) < 0.5) { aimQ.copy(camera.quaternion); return; }
+  aimQ.setFromRotationMatrix(aimM.lookAt(aimO, target, UP));
+}
 
 function fireRay(w, spread) {
-  const def = w.def, q = camera.quaternion;
+  const def = w.def;
+  aimBasis();
+  const q = aimQ;
   const dir = V(0, 0, -1).applyQuaternion(q);
   const r = spread * Math.sqrt(Math.random()), a = Math.random() * Math.PI * 2;
   dir.addScaledVector(V(1, 0, 0).applyQuaternion(q), Math.cos(a) * r);
   dir.addScaledVector(V(0, 1, 0).applyQuaternion(q), Math.sin(a) * r);
   dir.normalize();
-  const origin = camera.position.clone();
+  const origin = aimO.clone();
   const maxD = 800;
   const wh = raycastWorld(origin, dir, maxD);
   raycaster.set(origin, dir);
   raycaster.far = wh ? wh.t : maxD;
   const hits = raycaster.intersectObjects(enemyHitMeshes, false);
   let end;
-  if (hits.length) {
+  if (net && net.isClient) net.send({ t: 'shot', ox: origin.x, oy: origin.y, oz: origin.z, dx: dir.x, dy: dir.y, dz: dir.z, weapon: w.id });
+  if (hits.length && !(net && net.isClient)) {
     const h = hits[0];
     const e = h.object.userData.enemy;
     const part = h.object.userData.part;
@@ -717,6 +863,8 @@ function fireRay(w, spread) {
     damageEnemy(e, dmg, h.point, dir.clone(), head);
     showHitmarker(willKill, head);
     end = h.point;
+  } else if (hits.length) {
+    end = hits[0].point;
   } else if (wh) {
     impactFx(wh.point, wh.normal, wh.surf);
     addDecal(wh.point, wh.normal);
@@ -726,15 +874,15 @@ function fireRay(w, spread) {
 
   w.shotN++;
   if (def.tracerEvery && w.shotN % def.tracerEvery === 0) {
-    const mz = vmToWorld(w.model, w.model.muzzle, V());
-    spawnTracer(mz, end, 0xffc880, 0.018, 700);
+    spawnTracer(muzzleWorld(w, V()), end, 0xffc880, 0.018, 700);
   }
 }
 
 function ejectCasing(w) {
   const m = w.model, d = w.def;
-  const port = vmToWorld(m, tmpV2.set(0.03, d.type === 'pistol' ? 0.035 : 0.04, m.eject), V());
-  const right = V(1, 0, 0).applyQuaternion(camera.quaternion);
+  const tp = tpActive();
+  const port = tp ? body.ejectWorld(V()) : vmToWorld(m, tmpV2.set(0.03, d.type === 'pistol' ? 0.035 : 0.04, m.eject), V());
+  const right = tp ? body.rightWorld(V()) : V(1, 0, 0).applyQuaternion(camera.quaternion);
   const up = V(0, 1, 0).applyQuaternion(camera.quaternion);
   const fwd = V(0, 0, -1).applyQuaternion(camera.quaternion);
   const vel = right.multiplyScalar(rand(2, 3.2)).addScaledVector(up, rand(1.5, 2.6)).addScaledVector(fwd, rand(-0.6, 0.3)).add(player.vel);
@@ -742,9 +890,58 @@ function ejectCasing(w) {
   spawnCasing(port, vel, d.type === 'pistol' ? 'pistol' : 'rifle', player.pos.y, (p) => SFX.playCasing(p, d.type === 'pistol'));
 }
 
+function meleeStrike() {
+  if (net && net.isClient) {
+    net.send({ t: 'stab', x: player.pos.x, y: player.pos.y, z: player.pos.z, yaw: player.yaw, prone: !!player.prone });
+    return;
+  }
+  resolveMelee(player, null);
+}
+function resolveMelee(at, credit) {
+  const fx = -Math.sin(at.yaw), fz = -Math.cos(at.yaw);
+  const origin = V(at.pos.x, at.pos.y + (at.prone ? 0.4 : 1.05), at.pos.z);
+  let best = null, bestD = STAB_RANGE;
+  for (const e of enemies) {
+    if (e.dead) continue;
+    const dx = e.pos.x - player.pos.x, dz = e.pos.z - player.pos.z;
+    const horiz = Math.hypot(dx, dz);
+    if (horiz > STAB_RANGE || horiz < 0.05) continue;
+    if (Math.abs(e.pos.y + 1 - origin.y) > 1.5) continue;
+    if ((dx * fx + dz * fz) / horiz < 0.4) continue;
+    if (!hasLOS(origin, V(e.pos.x, e.pos.y + 1, e.pos.z))) continue;
+    if (horiz < bestD) { best = e; bestD = horiz; }
+  }
+  if (!best) return;
+  const bx = player.pos.x - best.pos.x, bz = player.pos.z - best.pos.z;
+  const behind = Math.hypot(bx, bz) || 1;
+  // Enemy forward is (sin rot, cos rot); the player is behind when that points away from them.
+  const back = (bx * Math.sin(best.rot) + bz * Math.cos(best.rot)) / behind < -0.5;
+  const point = V(best.pos.x, best.pos.y + (back ? 1.15 : 1.05), best.pos.z);
+  const willKill = back || best.hp - STAB_DMG <= 0;
+  if (back && !credit) flashMsg('BACKSTAB', 0.8);
+  const hit = damageEnemy(best, back ? 9999 : STAB_DMG, point, V(fx, 0.1, fz), false, credit);
+  if (credit && credit.remote) net.send({ t: 'marker', kill: hit.kill, head: back }, credit.id);
+  else showHitmarker(willKill, back);
+}
+function tryStab() {
+  if (stab.t >= 0 || nade.phase || S.switchT > 0 || S.ifakT > 0 || player.sprinting || S.fireCD > 0 || S.inspectT >= 0) return;
+  if (!S.triggerFresh) return;
+  S.triggerFresh = false;
+  stab.t = 0;
+  stab.landed = false;
+  S.fireCD = STAB_TIMING.dur + 0.08;
+  SFX.playSwoosh();
+}
+function updateStab(dt) {
+  if (stab.t < 0) return;
+  stab.t += dt;
+  if (!stab.landed && stab.t >= STAB_TIMING.hit) { stab.landed = true; meleeStrike(); }
+  if (stab.t >= STAB_TIMING.dur) stab.t = -1;
+}
 function tryFire() {
   const w = curW(), d = w.def;
-  if (S.switchT > 0 || S.reloading || S.ifakT > 0 || player.sprinting || S.fireCD > 0 || S.boltT > 0) return;
+  if (d.type === 'melee') { tryStab(); return; }
+  if (nade.phase || S.switchT > 0 || S.reloading || S.ifakT > 0 || player.sprinting || S.fireCD > 0 || S.boltT > 0 || S.inspectT >= 0) return;
   const mode = d.modes[w.mode];
   if (mode !== 'AUTO' && !S.triggerFresh) return;
   if (w.mag <= 0) {
@@ -757,18 +954,21 @@ function tryFire() {
   S.fireCD = 60 / d.rpm;
   if (mode === 'BOLT') { S.boltT = 1.15; SFX.playBolt(0.4); setTimeout(() => { if (curW() === w) ejectCasing(w); }, 600); }
   fireRay(w, currentSpread());
-  const rm = (S.adsT > 0.5 ? 0.7 : 1) * (player.crouch ? 0.8 : 1);
+  // A mounted LMG rests on its bipod, so it steadies even more.
+  const braced = mount.k * (d.type === 'lmg' && mount.type === 'top' ? 0.75 : 0.6);
+  const rm = (S.adsT > 0.5 ? 0.7 : 1) * (player.prone ? 0.6 : player.crouch ? 0.8 : 1) * (1 - braced);
   player.recoilP += d.recoil * rm * rand(0.8, 1.2);
   player.pitch += d.recoil * 0.3 * rm;
   player.yaw += (Math.random() - 0.5) * d.recoil * 0.7 * rm;
-  S.bloom = Math.min(S.bloom + d.bloomPerShot, 0.08);
-  S.kick = 1;
+  S.bloom = Math.min(S.bloom + d.bloomPerShot * (1 - braced * 0.8), 0.08);
+  S.kick = 1 - braced * 0.5;
   S.flashT = 0.045;
   const f = w.model.flash;
   f.visible = true;
   f.rotation.z = Math.random() * Math.PI;
   f.scale.setScalar(rand(0.75, 1.25));
-  vmToWorld(w.model, w.model.muzzle, muzzleLight.position);
+  if (tpActive()) body.fire();
+  muzzleWorld(w, muzzleLight.position);
   muzzleLight.intensity = d.type === 'pistol' ? 25 : 45;
   vmFlash.position.copy(w.model.muzzle).applyMatrix4(w.model.group.matrix);
   vmFlash.intensity = 1.2;
@@ -779,7 +979,7 @@ function tryFire() {
 
 function startReload() {
   const w = curW(), d = w.def;
-  if (S.reloading || S.switchT > 0 || S.ifakT > 0) return;
+  if (d.type === 'melee' || nade.phase || S.reloading || S.switchT > 0 || S.ifakT > 0) return;
   const cap = d.mag + (d.chamber && w.mag > 0 ? 1 : 0);
   if (w.mag >= cap) return;
   if (w.reserve <= 0) { flashMsg('NO RESERVE AMMO', 1.2); return; }
@@ -787,11 +987,15 @@ function startReload() {
   S.reloadT = 0;
   const empty = w.mag === 0;
   S.reloadDur = empty ? d.reloadEmpty : d.reload;
+  S.reloadEmpty = empty;
   S.adsT = Math.min(S.adsT, 0.3);
+  const pistol = d.type === 'pistol';
+  const dur = S.reloadDur;
   SFX.playGear();
-  SFX.playMagOut(S.reloadDur * 0.2);
-  SFX.playMagIn(S.reloadDur * 0.62);
-  if (empty || !d.chamber) SFX.playBolt(S.reloadDur * 0.82);
+  SFX.playMagOut(dur * (pistol ? 0.08 : empty ? 0.1 : 0.22));
+  SFX.playMagIn(dur * (pistol ? 0.64 : empty ? 0.62 : 0.74));
+  if (d.type === 'sniper') SFX.playBolt(dur * 0.85);
+  else if (empty) SFX.playBolt(dur * (pistol ? 0.85 : 0.82));
 }
 function finishReload() {
   const w = curW(), d = w.def;
@@ -802,8 +1006,10 @@ function finishReload() {
   S.reloading = false;
 }
 function switchWeapon(i) {
-  if (i === player.cur || i < 0 || i >= player.weapons.length || S.ifakT > 0) return;
+  if (nade.phase || i === player.cur || i < 0 || i >= player.weapons.length || S.ifakT > 0) return;
   player.cur = i;
+  stab.t = -1;
+  S.inspectT = -1;
   S.reloading = false;
   S.boltT = 0;
   S.switchT = 0.5;
@@ -812,10 +1018,23 @@ function switchWeapon(i) {
   SFX.playClick(0.15, 700, 0.18);
 }
 function useIfak() {
-  if (player.ifaks <= 0 || player.hp >= 100 || S.ifakT > 0) return;
+  if (nade.phase || player.ifaks <= 0 || player.hp >= 100 || S.ifakT > 0) return;
   S.reloading = false;
-  S.ifakT = 2.5;
-  SFX.playBandage();
+  S.inspectT = -1;
+  S.ifakT = MED_TIMING.dur;
+  S.medSfx = 0;
+  SFX.playGear();
+}
+// Sounds keyed to the bandage animation: tear the pack, one stretch per turn, clip the bar.
+function medSounds(t) {
+  const T = MED_TIMING, turn = (T.wrapEnd - T.present) / T.turns;
+  const cues = [T.tear + 0.03, ...Array.from({ length: T.turns }, (_, i) => T.present + i * turn), T.fasten - 0.06];
+  while (S.medSfx < cues.length && t >= cues[S.medSfx]) {
+    const i = S.medSfx++;
+    if (i === 0) SFX.playTear();
+    else if (i === cues.length - 1) SFX.playClick(0, 1300, 0.25);
+    else SFX.playWrap();
+  }
 }
 function resupply() {
   if (!world.resupplyPos || S.resupplyCD > 0) return;
@@ -847,7 +1066,12 @@ function damagePlayer(amount, fromPos, explosive) {
   if (S.ifakT > 0 && amount > 15) S.ifakT = 0;
   SFX.playHurt();
   if (fromPos) addDamageIndicator(fromPos);
-  if (player.hp <= 0) { player.hp = 0; gameOver(); }
+  if (player.hp <= 0) {
+    player.hp = 0;
+    // Fall away from whoever landed the killing shot.
+    const front = !fromPos || (fromPos.x - player.pos.x) * -Math.sin(player.yaw) + (fromPos.z - player.pos.z) * -Math.cos(player.yaw) > 0;
+    gameOver(!!explosive, front ? -1 : 1);
+  }
 }
 
 // ============================================================
@@ -861,6 +1085,7 @@ const hud = {
   cross: $('crosshair'), scope: $('scope'), heal: $('heal-vignette'),
   prompt: $('prompt'), msg: $('center-msg'), prog: $('progress'), progBar: $('progress-bar'), progLabel: $('progress-label'),
   hit: $('hitmarker'), kf: $('killfeed'), ind: $('dmg-indicators'), mm: $('minimap').getContext('2d'),
+  mount: $('mount'), squad: $('squad'), nadeTimer: $('nade-timer'),
 };
 let hitT = 0;
 function showHitmarker(kill, head) {
@@ -874,11 +1099,11 @@ function flashMsg(html, dur = 2) {
   hud.msg.style.opacity = 1;
   S.msgT = dur;
 }
-function addKillfeed(e, head, nade) {
+function addKillfeed(e, head, nade, bot = null) {
   const el = document.createElement('div');
   el.className = 'kf';
-  const wname = nade ? 'M67 Frag' : curW().def.name;
-  el.innerHTML = `<span class="you">You</span> <span class="wp">[${wname}]</span> <span class="en">${e.t.name}</span>${head ? ' <span class="hs">HEADSHOT</span>' : ''}`;
+  const wname = nade ? 'M67 Frag' : bot ? bot.def.name : curW().def.name;
+  el.innerHTML = `<span class="${bot ? 'mate' : 'you'}">${bot ? bot.name : 'You'}</span> <span class="wp">[${wname}]</span> <span class="en">${e.t.name}</span>${head ? ' <span class="hs">HEADSHOT</span>' : ''}`;
   hud.kf.prepend(el);
   while (hud.kf.children.length > 5) hud.kf.lastChild.remove();
   setTimeout(() => el.remove(), 4500);
@@ -905,12 +1130,12 @@ function updateHUD(dt) {
   hud.ifak.textContent = player.ifaks;
   hud.nades.textContent = player.frags;
   hud.wName.textContent = d.name;
-  hud.wCal.textContent = `${d.caliber} · ${d.optic}`;
-  hud.mag.textContent = w.mag;
-  hud.mag.classList.toggle('low', w.mag <= Math.ceil(d.mag * 0.2));
-  hud.reserve.textContent = '/ ' + w.reserve;
-  hud.mode.textContent = S.reloading ? 'RELOADING…' : d.modes[w.mode];
-  hud.slots.innerHTML = player.weapons.map((x, i) => `<span class="${i === player.cur ? 'active' : ''}">[${i + 1}] ${x.def.name}</span>`).join(' &nbsp; ');
+  hud.wCal.textContent = d.type === 'melee' ? d.optic : `${d.caliber} · ${d.optic}`;
+  hud.mag.textContent = d.type === 'melee' ? '—' : w.mag;
+  hud.mag.classList.toggle('low', d.type !== 'melee' && w.mag <= Math.ceil(d.mag * 0.2));
+  hud.reserve.textContent = d.type === 'melee' ? '' : '/ ' + w.reserve;
+  hud.mode.textContent = S.reloading ? 'RELOADING…' : d.type === 'melee' ? (stab.t >= 0 ? 'STABBING' : 'MELEE') : d.modes[w.mode];
+  hud.slots.innerHTML = player.weapons.map((x, i) => `<span class="${i === player.cur ? 'active' : ''}">[${i + 1}] ${x.def.tag || x.def.name}</span>`).join(' &nbsp; ');
   hud.kills.textContent = player.kills;
   hud.score.textContent = player.score;
   hud.hostiles.textContent = S.alive + S.toSpawn;
@@ -923,7 +1148,7 @@ function updateHUD(dt) {
   hud.scope.style.display = scoped ? 'block' : 'none';
   const sp = currentSpread();
   hud.cross.style.setProperty('--gap', (6 + sp * 500) + 'px');
-  hud.cross.style.opacity = S.adsT > 0.5 || player.sprinting ? 0 : 1;
+  hud.cross.style.opacity = (S.adsT > 0.5 && !tpActive()) || player.sprinting ? 0 : 1;
 
   if (hitT > 0) { hitT -= dt; if (hitT <= 0) hud.hit.style.opacity = 0; }
   if (S.msgT > 0) { S.msgT -= dt; if (S.msgT <= 0) hud.msg.style.opacity = 0; }
@@ -931,7 +1156,7 @@ function updateHUD(dt) {
   if (S.ifakT > 0) {
     hud.prog.classList.remove('hidden');
     hud.progLabel.textContent = 'APPLYING IFAK';
-    hud.progBar.style.width = (1 - S.ifakT / 2.5) * 100 + '%';
+    hud.progBar.style.width = (1 - S.ifakT / MED_TIMING.dur) * 100 + '%';
   } else if (S.reloading) {
     hud.prog.classList.remove('hidden');
     hud.progLabel.textContent = 'RELOADING';
@@ -944,6 +1169,36 @@ function updateHUD(dt) {
     hud.prompt.style.display = 'block';
     hud.prompt.innerHTML = S.resupplyCD > 0 ? `Resupply available in ${Math.ceil(S.resupplyCD)}s` : 'Press <kbd>F</kbd> to resupply';
   } else hud.prompt.style.display = 'none';
+
+  hud.mount.className = mount.k > 0.5 ? 'on' : mount.can ? 'can' : '';
+  hud.mount.textContent = mount.k > 0.5 ? (mount.type === 'top' ? 'MOUNTED · LEDGE' : 'MOUNTED · CORNER') : 'RMB · MOUNT';
+
+  const live = nade.phase && nade.cook >= 0 && !nade.released;
+  hud.nadeTimer.style.display = live ? 'block' : 'none';
+  if (live) {
+    const left = Math.max(0, NADE_FUSE - nade.cook);
+    hud.nadeTimer.lastChild.textContent = left.toFixed(1);
+    hud.nadeTimer.classList.toggle('danger', left < 1.5);
+  }
+
+  const mates = [
+    ...squad.bots.map((b) => ({ name: b.name, tag: b.alive ? b.tag : 'DOWN', hp: b.hp, down: !b.alive })),
+    ...(net ? net.roster() : []),
+  ];
+  hud.squad.style.display = mates.length ? 'block' : 'none';
+  mates.forEach((b, i) => {
+    let row = hud.squad.children[i];
+    if (!row) {
+      row = document.createElement('div');
+      row.className = 'mate-row';
+      row.innerHTML = '<span></span><div class="bar"><div></div></div>';
+      hud.squad.appendChild(row);
+    }
+    row.firstChild.textContent = `${b.name} · ${b.tag}`;
+    row.classList.toggle('down', b.down);
+    row.lastChild.firstChild.style.width = Math.max(0, Math.min(100, b.hp)) + '%';
+  });
+  while (hud.squad.children.length > mates.length) hud.squad.lastChild.remove();
 }
 
 function drawMinimap() {
@@ -966,12 +1221,20 @@ function drawMinimap() {
   const rp = world.resupplyPos;
   if (rp) { c.fillStyle = '#6ea8ff'; c.fillRect(rp.x - 1.2, rp.z - 1.2, 2.4, 2.4); }
   for (const p of pickups) { c.fillStyle = '#7ddc6a'; c.fillRect(p.g.position.x - 0.8, p.g.position.z - 0.8, 1.6, 1.6); }
-  for (const e of enemies) {
+  for (const e of (net && net.isClient ? net.enemyMarks() : enemies)) {
     if (e.dead || e.emerge > 0) continue;
     const d = Math.hypot(e.pos.x - player.pos.x, e.pos.z - player.pos.z);
     if (d > 45 && !e.vis) continue;
-    c.fillStyle = e.t.sniper ? '#ffcf3c' : '#ff4a3c';
+    c.fillStyle = (e.sniper || e.t?.sniper) ? '#ffcf3c' : '#ff4a3c';
     c.beginPath(); c.arc(e.pos.x, e.pos.z, 1.6, 0, 7); c.fill();
+  }
+  if (net && net.isClient) {
+    c.fillStyle = '#9ad0ff';
+    for (const b of net.peerMarks()) { c.beginPath(); c.arc(b.x, b.z, 1.5, 0, 7); c.fill(); }
+  }
+  for (const b of squad.bots) {
+    c.fillStyle = b.alive ? '#6ec8ff' : 'rgba(110,200,255,0.35)';
+    c.beginPath(); c.arc(b.pos.x, b.pos.z, 1.5, 0, 7); c.fill();
   }
   c.restore();
   c.fillStyle = '#fff';
@@ -988,17 +1251,35 @@ document.addEventListener('keydown', (e) => {
     case 'KeyR': startReload(); break;
     case 'Digit1': switchWeapon(0); break;
     case 'Digit2': switchWeapon(1); break;
-    case 'KeyQ': switchWeapon(1 - player.cur); break;
+    case 'Digit3': switchWeapon(2); break;
+    case 'KeyQ': switchWeapon(player.cur === 0 ? 1 : 0); break;
     case 'KeyB': { const w = curW(); if (w.def.modes.length > 1) { w.mode = (w.mode + 1) % w.def.modes.length; SFX.playClick(0, 2000, 0.15); } break; }
-    case 'KeyG': throwGrenade(); break;
+    case 'KeyG': if (!e.repeat) startGrenade(); break;
     case 'KeyH': useIfak(); break;
     case 'KeyF': resupply(); break;
-    case 'KeyC': player.crouch = !player.crouch; SFX.playGear(); break;
-    case 'Space': if (player.onGround && S.ifakT <= 0) { player.vy = 6.2; player.onGround = false; player.crouch = false; SFX.playGear(); } break;
+    case 'KeyI':
+      if (S.inspectT < 0 && !nade.phase && !S.reloading && S.switchT <= 0 && stab.t < 0 && S.ifakT <= 0) { S.inspectT = 0; SFX.playGear(); }
+      break;
+    case 'KeyC': player.crouch = !player.crouch; if (player.crouch) player.prone = false; SFX.playGear(); break;
+    case 'KeyZ':
+      if (player.onGround || player.prone) { player.prone = !player.prone; if (player.prone) player.crouch = false; SFX.playGear(); }
+      break;
+    case 'KeyV':
+      S.thirdPerson = !S.thirdPerson;
+      localStorage.setItem('idf-tp', S.thirdPerson ? '1' : '0');
+      flashMsg(S.thirdPerson ? 'THIRD PERSON' : 'FIRST PERSON', 0.8);
+      break;
+    case 'Space':
+      if (player.prone) { player.prone = false; SFX.playGear(); break; }
+      if (player.onGround && S.ifakT <= 0) { player.vy = 6.2; player.onGround = false; player.crouch = false; SFX.playGear(); }
+      break;
   }
   if (['Space', 'Tab'].includes(e.code)) e.preventDefault();
 });
-document.addEventListener('keyup', (e) => { keys[e.code] = false; });
+document.addEventListener('keyup', (e) => {
+  keys[e.code] = false;
+  if (e.code === 'KeyG') nade.held = false;
+});
 document.addEventListener('mousedown', (e) => {
   if (S.state !== 'playing') return;
   if (document.pointerLockElement !== canvas) { canvas.requestPointerLock(); return; }
@@ -1010,7 +1291,11 @@ document.addEventListener('mouseup', (e) => {
   if (e.button === 2) mouse.right = false;
 });
 document.addEventListener('contextmenu', (e) => e.preventDefault());
-document.addEventListener('wheel', () => { if (S.state === 'playing') switchWeapon(1 - player.cur); });
+document.addEventListener('wheel', (e) => {
+  if (S.state !== 'playing') return;
+  const n = player.weapons.length;
+  switchWeapon((player.cur + (e.deltaY > 0 ? 1 : -1) + n) % n);
+});
 document.addEventListener('mousemove', (e) => {
   if (S.state !== 'playing' || document.pointerLockElement !== canvas) return;
   const sens = 0.0022 * (camera.fov / BASE_FOV);
@@ -1026,6 +1311,72 @@ document.addEventListener('pointerlockchange', () => {
 // ============================================================
 //  GAME FLOW
 // ============================================================
+function applyShot(peer, m) {
+  if (!peer.alive) return;
+  const origin = V(m.ox, m.oy, m.oz);
+  const dir = V(m.dx, m.dy, m.dz);
+  if (![origin.x, origin.y, origin.z, dir.x, dir.y, dir.z].every((n) => Number.isFinite(n)) || dir.lengthSq() < 1e-8) return;
+  const eye = V(peer.x, peer.y + (peer.eye || 1.6), peer.z);
+  if (origin.distanceTo(eye) > 3 && origin.distanceTo(V(peer.x, peer.y, peer.z)) > 3) return;
+  const now = performance.now();
+  if (peer.shotAt && now - peer.shotAt < 45) return;
+  peer.shotAt = now;
+  const def = WEAPONS[m.weapon];
+  if (!def || def.type === 'melee') return;
+  dir.normalize();
+  const wh = raycastWorld(origin, dir, 800);
+  raycaster.set(origin, dir);
+  raycaster.far = wh ? wh.t : 800;
+  const hits = raycaster.intersectObjects(enemyHitMeshes, false);
+  if (!hits.length) return;
+  const h = hits[0];
+  const e = h.object.userData.enemy;
+  if (!e || e.dead) return;
+  const part = h.object.userData.part;
+  const head = part === 'head';
+  let dmg = def.damage * (head ? def.headMult : part === 'legs' ? 0.75 : 1);
+  if (h.distance > def.range) dmg *= 0.75;
+  const credit = { name: peer.name, def: { name: def.tag || def.name }, remote: true, id: peer.id };
+  const hit = damageEnemy(e, dmg, h.point, dir, head, credit);
+  net.send({ t: 'marker', kill: hit.kill, head }, peer.id);
+  if (def.tracerEvery) spawnTracer(origin, h.point, 0xffc880, 0.018, 700);
+}
+function applyStab(peer, m) {
+  if (!peer.alive || !Number.isFinite(m.x)) return;
+  const at = { pos: V(m.x, m.y, m.z), yaw: m.yaw, prone: !!m.prone };
+  if (at.pos.distanceTo(V(peer.x, peer.y, peer.z)) > 3) at.pos.set(peer.x, peer.y, peer.z);
+  resolveMelee(at, { name: peer.name, def: { name: 'Karambit' }, remote: true, id: peer.id });
+}
+function spawnGrenadeFrom(peer, m) {
+  if (!peer.alive) return;
+  const pos = V(m.x, m.y, m.z);
+  if (pos.distanceTo(V(peer.x, peer.y, peer.z)) > 5) return;
+  const vel = V(m.vx, m.vy, m.vz);
+  if (vel.length() > 40) vel.setLength(40);
+  const g = makeGrenadeMesh();
+  g.spoon.visible = g.ring.visible = false;
+  g.root.position.copy(pos);
+  scene.add(g.root);
+  grenades.push({ m: g.root, pos, vel, fuse: Math.min(4, Math.max(0.05, m.fuse || 1)), gid: nadeSeq++ });
+}
+function explodeFrom(peer, m) {
+  const p = V(m.x, m.y, m.z);
+  if (p.distanceTo(V(peer.x, peer.y + 1, peer.z)) > 3) return;
+  explode(p, 9, 210, true, UP, V(p.x, groundHeightAt(p.x, p.z, p.y, 0), p.z));
+}
+function netRevive() {
+  player.hp = 100;
+  player.armor = player.armorMax;
+  if (S.state !== 'dead') return;
+  S.state = 'playing';
+  S.tpDead = false;
+  S.deadT = 0;
+  camera.rotation.z = 0;
+  body.revive();
+  $('gameover').classList.add('hidden');
+  $('hud').classList.remove('hidden');
+  canvas.requestPointerLock();
+}
 function clearEntities() {
   for (const e of enemies.slice()) removeEnemy(e);
   for (const g of grenades) scene.remove(g.m);
@@ -1035,14 +1386,19 @@ function clearEntities() {
   for (const p of pickups) scene.remove(p.g);
   pickups.length = 0;
   clearDecals();
+  squad.clear();
+  if (net) net.resetWorld();
   enemyHitMeshes = [];
   while (vmRoot.children.length) vmRoot.remove(vmRoot.children[0]);
+  nadeVM = null;
+  medVM = null;
+  nade.phase = null;
 }
 function deploy(cls) {
   SFX.initAudio();
   clearEntities();
   player.cls = cls;
-  player.weapons = [makeWeapon(cls.primary), makeWeapon(cls.secondary)];
+  player.weapons = [makeWeapon(cls.primary), makeWeapon(cls.secondary), makeWeapon('karambit')];
   player.cur = 0;
   player.hp = 100;
   player.armorMax = cls.armor;
@@ -1051,14 +1407,23 @@ function deploy(cls) {
   player.frags = cls.frags;
   player.pos.copy(world.spawn);
   player.vel.set(0, 0, 0);
-  player.vy = 0; player.yaw = 0; player.pitch = 0; player.recoilP = 0; player.crouch = false; player.eye = 1.65; player.onGround = true;
+  player.vy = 0; player.yaw = 0; player.pitch = 0; player.recoilP = 0; player.crouch = false; player.prone = false; player.eye = 1.65; player.onGround = true;
   player.kills = player.headshots = player.score = player.shots = player.hits = 0;
   Object.assign(S, {
     wave: 0, toSpawn: 0, spawnT: 0, intermission: 6, alive: 0, reloading: false, switchT: 0.5, ifakT: 0,
-    fireCD: 0, boltT: 0, adsT: 0, bloom: 0, kick: 0, nadeCD: 0, resupplyCD: 0, shake: 0, hurtT: 0, flowT: 0, time: 0,
+    fireCD: 0, boltT: 0, adsT: 0, bloom: 0, kick: 0, nadeCD: 0, resupplyCD: 0, shake: 0, hurtT: 0, flowT: 0, time: 0, inspectT: -1,
     supp: 0, flashW: 0, landDip: 0, punchP: 0, punchY: 0,
   });
   camera.rotation.z = 0;
+  S.tpK = S.thirdPerson ? 1 : 0;
+  S.camD = 2;
+  S.tpDead = false;
+  S.deadT = 0;
+  Object.assign(mount, { k: 0, can: false, on: false, type: null, side: 0 });
+  body.revive();
+  body.setWeapon(player.weapons[0].id);
+  squad.spawn(net && net.online ? 0 : botCount);
+  if (net && net.isHost) net.hostBegan();
   $('menu').classList.add('hidden');
   $('gameover').classList.add('hidden');
   $('pause').classList.add('hidden');
@@ -1089,6 +1454,13 @@ function updateWaves(dt) {
   if (S.toSpawn === 0 && S.alive === 0) {
     player.score += S.wave * 250;
     S.intermission = 12;
+    squad.reviveAll();
+    if (net && net.isHost) {
+      net.reviveHumans();
+      player.armor = player.armorMax;
+      if (player.hp <= 0 || S.state === 'dead') netRevive();
+      else player.hp = 100;
+    }
     flashMsg(`WAVE ${S.wave} CLEARED\n<small>+${S.wave * 250} bonus · Regroup and resupply</small>`, 3);
   }
 }
@@ -1102,8 +1474,12 @@ function resumeGame() {
   S.state = 'playing';
   canvas.requestPointerLock();
 }
-function gameOver() {
+function gameOver(explosive = false, fallDir = -1) {
   S.state = 'dead';
+  dropLiveGrenade();
+  S.tpDead = tpActive();
+  S.deadT = 0;
+  if (S.tpDead) body.die({ dir: fallDir, blast: explosive });
   document.exitPointerLock();
   const acc = player.shots ? Math.round((player.hits / player.shots) * 100) : 0;
   $('go-stats').innerHTML = `
@@ -1119,6 +1495,8 @@ function toMenu() {
   S.state = 'menu';
   document.exitPointerLock();
   clearEntities();
+  body.root.visible = false;
+  if (net && net.isHost) net.missionEnded();
   $('pause').classList.add('hidden');
   $('gameover').classList.add('hidden');
   $('hud').classList.add('hidden');
@@ -1144,10 +1522,11 @@ function updatePlayer(dt) {
 
   const shift = keys.ShiftLeft || keys.ShiftRight;
   player.sprinting = shift && f > 0 && !mouse.right && S.ifakT <= 0 && player.onGround;
-  if (player.sprinting && player.crouch) player.crouch = false;
+  if (player.sprinting) { player.crouch = false; player.prone = false; }
   let speed = 5 * player.cls.speed * (d.moveMult || 1);
   if (player.sprinting) speed *= 1.55;
-  if (player.crouch) speed *= 0.5;
+  if (player.prone) speed *= 0.22;
+  else if (player.crouch) speed *= 0.5;
   speed *= 1 - S.adsT * 0.4;
   if (S.ifakT > 0) speed *= 0.5;
 
@@ -1156,7 +1535,7 @@ function updatePlayer(dt) {
   player.vel.z = lerp(player.vel.z, mz * speed, Math.min(1, accel * dt));
   player.pos.x += player.vel.x * dt;
   player.pos.z += player.vel.z * dt;
-  resolveCollisions(player.pos, 0.4, player.pos.y, player.crouch ? 1.2 : 1.8);
+  resolveCollisions(player.pos, player.prone ? 0.35 : 0.4, player.pos.y, player.prone ? 0.45 : player.crouch ? 1.2 : 1.8);
   player.pos.x = clamp(player.pos.x, -HALF + 0.5, HALF - 0.5);
   player.pos.z = clamp(player.pos.z, -HALF + 0.5, HALF - 0.5);
 
@@ -1175,22 +1554,95 @@ function updatePlayer(dt) {
   }
   S.landDip = approach(S.landDip, 0, dt * 3);
 
-  player.eye = approach(player.eye, player.crouch ? 1.05 : 1.65, dt * 5);
+  player.eye = approach(player.eye, player.prone ? 0.32 : player.crouch ? 1.05 : 1.65, dt * 4);
 
   const sp = Math.hypot(player.vel.x, player.vel.z);
   if (player.onGround && sp > 0.5) {
     const prev = S.bobT;
     S.bobT += dt * sp * 1.7;
-    if (Math.floor(prev / Math.PI) !== Math.floor(S.bobT / Math.PI)) SFX.playStep(surfaceAt(player.pos.x, player.pos.z, player.pos.y), player.sprinting, player.crouch);
+    if (Math.floor(prev / Math.PI) !== Math.floor(S.bobT / Math.PI)) SFX.playStep(surfaceAt(player.pos.x, player.pos.z, player.pos.y), player.sprinting, player.crouch || player.prone);
   }
+}
+
+// Weapon mounting: aiming down sights while braced on a wall corner or over a waist-high ledge rests
+// the weapon on the cover, cutting recoil and sway. `side` is +1 when the wall is on the right.
+const mount = { k: 0, can: false, on: false, type: null, side: 0, checkT: 0 };
+function solidAt(x, y, z) {
+  for (const c of colliders) if (x > c.minX && x < c.maxX && z > c.minZ && z < c.maxZ && y < c.top && y > c.bottom) return true;
+  return false;
+}
+function detectMount() {
+  const gy = player.pos.y + player.eye - 0.18;
+  const fx = -Math.sin(player.yaw), fz = -Math.cos(player.yaw), rx = -fz, rz = fx;
+  const px = player.pos.x, pz = player.pos.z;
+  // The line of fire itself must be open.
+  if (solidAt(px + fx * 0.45, gy, pz + fz * 0.45) || solidAt(px + fx * 0.9, gy, pz + fz * 0.9)) return null;
+  // Ledge: a cover top below the gun (but not a kerb underfoot), within reach ahead.
+  const floor = Math.max(gy - 0.75, player.pos.y + 0.3);
+  for (const d of [0.4, 0.6, 0.8]) {
+    const x = px + fx * d, z = pz + fz * d;
+    for (const c of colliders) {
+      if (x > c.minX && x < c.maxX && z > c.minZ && z < c.maxZ && c.top < gy - 0.02 && c.top > floor) return { type: 'top', side: 0 };
+    }
+  }
+  // Corner: a wall edge within arm's reach to one side, i.e. solid and open samples along that side.
+  for (const s of [1, -1]) {
+    let solid = 0, open = 0;
+    for (const d of [-0.2, 0.1, 0.4, 0.7, 1.0]) {
+      if (solidAt(px + rx * s * 0.55 + fx * d, gy, pz + rz * s * 0.55 + fz * d)) solid++; else open++;
+    }
+    if (solid && open) return { type: 'corner', side: s };
+  }
+  return null;
+}
+// Shots leave from the eye along the aim, so the cover must not sit anywhere in the spread cone.
+// While mounted the leaned-out camera is tested, otherwise the unleaned eye (which is closer to the wall).
+const mountO = V(), mountF = V(), mountR = V(), mountU = V(), mountD = V();
+function mountAimBlocked() {
+  if (mount.on) mountO.copy(camera.position);
+  else mountO.set(player.pos.x, player.pos.y + player.eye, player.pos.z);
+  const y = player.yaw, p = player.pitch + player.recoilP;
+  mountF.set(-Math.sin(y) * Math.cos(p), Math.sin(p), -Math.cos(y) * Math.cos(p));
+  mountR.set(Math.cos(y), 0, -Math.sin(y));
+  mountU.crossVectors(mountR, mountF);
+  for (const [a, b] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]]) {
+    mountD.copy(mountF).addScaledVector(mountR, a * 0.04).addScaledVector(mountU, b * 0.04).normalize();
+    const h = raycastWorld(mountO, mountD, 4);
+    if (h && !(h.normal.y === 1 && h.point.y < 0.005)) return true;
+  }
+  return false;
+}
+function updateMount(dt, d) {
+  mount.checkT -= dt;
+  if (mount.checkT <= 0) {
+    mount.checkT = 0.1;
+    const m = player.onGround && !player.prone && Math.hypot(player.vel.x, player.vel.z) < 1.5 && !player.sprinting && d.type !== 'pistol' && d.type !== 'melee' ? detectMount() : null;
+    mount.can = !!m;
+    if (m) { mount.type = m.type; mount.side = m.side; }
+  }
+  if (mount.can && mountAimBlocked()) mount.can = false;
+  const on = mount.can && S.adsT > 0.6 && !S.reloading && !nade.phase;
+  if (on && !mount.on) { SFX.playGear(); S.landDip = Math.max(S.landDip, 0.12); }
+  mount.on = on;
+  mount.k = approach(mount.k, on ? 1 : 0, dt * 6);
 }
 
 function updateWeapon(dt) {
   const w = curW(), d = w.def;
+  updateMount(dt, d);
   S.fireCD -= dt; S.nadeCD -= dt; S.resupplyCD -= dt;
   if (S.boltT > 0) S.boltT -= dt;
   if (S.switchT > 0) S.switchT -= dt;
-  const wantAds = mouse.right && !player.sprinting && !S.reloading && S.switchT <= 0 && S.ifakT <= 0;
+  updateGrenade(dt);
+  updateStab(dt);
+  if (S.inspectT >= 0) {
+    const was = S.inspectT;
+    S.inspectT += dt / (w.model?.inspectDur ?? 2.4);
+    // Swishes of the karambit spinning on the finger.
+    if (d.type === 'melee') for (const at of [0.54, 0.63]) if (was < at && S.inspectT >= at) SFX.playSwoosh();
+    if (S.inspectT >= 1) S.inspectT = -1;
+  }
+  const wantAds = mouse.right && !player.sprinting && !S.reloading && S.switchT <= 0 && S.ifakT <= 0 && !nade.phase && d.type !== 'melee' && S.inspectT < 0;
   S.adsT = approach(S.adsT, wantAds ? 1 : 0, dt / d.adsTime);
   S.bloom *= Math.exp(-dt * 5);
   S.kick *= Math.exp(-dt * 14);
@@ -1199,9 +1651,11 @@ function updateWeapon(dt) {
   if (S.reloading) { S.reloadT += dt; if (S.reloadT >= S.reloadDur) finishReload(); }
   if (S.ifakT > 0) {
     S.ifakT -= dt;
+    medSounds(MED_TIMING.dur - S.ifakT);
     if (S.ifakT <= 0) {
       player.hp = Math.min(100, player.hp + 50);
       player.ifaks--;
+      if (net && net.isClient) net.send({ t: 'ifak' });
       hud.heal.style.opacity = 1;
       setTimeout(() => (hud.heal.style.opacity = 0), 400);
     }
@@ -1213,8 +1667,8 @@ function updateWeapon(dt) {
   const holding = scoped && shift && S.breath > 0;
   if (holding) S.breath -= dt; else S.breath = Math.min(4, S.breath + dt * 0.8);
   S.swayT += dt;
-  const amp = scoped ? (holding ? 0.0006 : 0.004 * (player.crouch ? 0.6 : 1)) : 0.0006 * S.adsT;
-  const suppAmp = S.supp * 0.004;
+  const amp = (scoped ? (holding ? 0.0006 : 0.004 * (player.crouch ? 0.6 : 1)) : 0.0006 * S.adsT) * (1 - 0.85 * mount.k);
+  const suppAmp = S.supp * 0.004 * (1 - 0.5 * mount.k);
   const swayP = Math.sin(S.swayT * 1.1) * (amp + suppAmp), swayY = Math.sin(S.swayT * 0.7) * (amp + suppAmp) * 1.3;
 
   const targetFov = scoped ? d.adsFov : lerp(BASE_FOV, d.scope ? 55 : d.adsFov, S.adsT) + (player.sprinting ? 6 : 0);
@@ -1226,9 +1680,29 @@ function updateWeapon(dt) {
   S.shake *= Math.exp(-dt * 4);
   const sh = S.shake * 0.08;
   const bobY = player.onGround ? -Math.abs(Math.sin(S.bobT)) * 0.025 * Math.min(Math.hypot(player.vel.x, player.vel.z) / 5, 1.5) * (1 - S.adsT * 0.7) : 0;
-  camera.position.set(player.pos.x + rand(-sh, sh), player.pos.y + player.eye + bobY - S.landDip * 0.15 + rand(-sh, sh), player.pos.z);
-  camera.rotation.set(player.pitch + player.recoilP + swayP + S.punchP, player.yaw + swayY + S.punchY, Math.sin(S.bobT * 0.5) * 0.004 * (1 - S.adsT));
+  // Corner mounts lean the head out past the edge, away from the wall.
+  const lean = mount.type === 'corner' ? -mount.side * mount.k : 0;
+  camera.position.set(
+    player.pos.x + rand(-sh, sh) + Math.cos(player.yaw) * lean * 0.12,
+    player.pos.y + player.eye + bobY - S.landDip * 0.15 + rand(-sh, sh),
+    player.pos.z - Math.sin(player.yaw) * lean * 0.12,
+  );
+  camera.rotation.set(player.pitch + player.recoilP + swayP + S.punchP, player.yaw + swayY + S.punchY, Math.sin(S.bobT * 0.5) * 0.004 * (1 - S.adsT) - lean * 0.045);
   camera.updateMatrixWorld();
+
+  // Over-the-shoulder camera, pulled in when a wall is behind the player. Scoped ADS goes back to first person.
+  S.tpK = approach(S.tpK, S.thirdPerson && !(d.scope && S.adsT > 0.5) ? 1 : 0, dt * 5);
+  if (S.tpK > 0) {
+    const k = S.tpK * S.tpK * (3 - 2 * S.tpK);
+    tpOff.set(lerp(0.55, 0.42, S.adsT), 0.14, lerp(2.3, 1.2, S.adsT)).applyQuaternion(camera.quaternion);
+    const len = tpOff.length();
+    tpOff.divideScalar(len);
+    const hit = raycastWorld(camera.position, tpOff, len + 0.3);
+    const want = hit ? Math.max(0.2, hit.t - 0.3) : len;
+    S.camD = want < S.camD ? want : approach(S.camD, want, dt * 3);
+    camera.position.addScaledVector(tpOff, S.camD * k);
+    camera.updateMatrixWorld();
+  }
 
   if (S.flashT > 0) {
     S.flashT -= dt;
@@ -1236,14 +1710,48 @@ function updateWeapon(dt) {
   }
 }
 
+const tpOff = V();
+function updateBody(dt) {
+  const dead = S.state === 'dead';
+  // Hidden in first person, and when the camera is squeezed right up against the head.
+  body.root.visible = dead ? S.tpDead : tpActive() && S.camD > 0.6;
+  if (!body.root.visible) return;
+  body.root.position.copy(player.pos);
+  body.root.rotation.y = player.yaw + Math.PI;
+  if (dead) { body.update(dt, null); return; }
+  const w = curW();
+  body.setWeapon(w.id);
+  const fwd = player.vel.x * -Math.sin(player.yaw) + player.vel.z * -Math.cos(player.yaw);
+  body.update(dt, {
+    speed: Math.hypot(player.vel.x, player.vel.z), back: fwd < -0.3,
+    pitch: player.pitch + player.recoilP, crouch: player.crouch, sprint: player.sprinting, ads: S.adsT,
+    reloadP: S.reloading ? Math.min(1, S.reloadT / S.reloadDur) : -1, empty: S.reloadEmpty,
+    kick: S.kick, switchK: S.switchT > 0 || S.ifakT > 0 ? 1 : 0,
+    nade: nade.phase ? nade : null,
+    knife: w.def.type === 'melee', stab: stab.t, prone: player.prone, inspect: S.inspectT,
+    ifak: S.ifakT > 0 ? MED_TIMING.dur - S.ifakT : -1,
+  });
+}
+
+let nadeVM = null, medVM = null;
 function updateViewModel(dt) {
-  const w = curW(), m = w.model, d = w.def;
-  for (const x of player.weapons) x.model.group.visible = x.model.arms.visible = x === w;
-  vmRoot.visible = !(d.scope && S.adsT > 0.9);
+  const w = curW(), d = w.def;
+  // The weapon drops away while the bandage is applied and comes back up at the end.
+  const medT = S.ifakT > 0 ? MED_TIMING.dur - S.ifakT : -1;
+  const medLow = medT < 0 ? 0 : Math.min(smoothstep(medT / 0.28), smoothstep(S.ifakT / 0.38));
+  for (const x of player.weapons) if (x.model) x.model.group.visible = x.model.arms.visible = x === w && !nade.phase && medLow < 0.97;
+  vmRoot.visible = !(d.scope && S.adsT > 0.9) && !tpActive();
+  if (!nadeVM) nadeVM = buildGrenadeViewModel(vmRoot);
+  nadeVM.group.position.set(vmSway.x * 0.8, vmSway.y * 0.8 - S.landDip * 0.05, 0);
+  nadeVM.update(nade.phase ? nade : null, S.time);
+  if (!medVM) medVM = buildMedViewModel(vmRoot);
+  medVM.group.position.set(vmSway.x * 0.6, vmSway.y * 0.6 - S.landDip * 0.05, 0);
+  medVM.update(medT);
+  const m = w.model;
   const g = m.group;
   const pos = m.hip.clone().lerp(m.ads, S.adsT);
   const sp = Math.hypot(player.vel.x, player.vel.z);
-  const bob = (1 - S.adsT * 0.92) * Math.min(sp / 5, 1.6);
+  const bob = (1 - S.adsT * 0.92) * Math.min(sp / 5, 1.6) * (1 - mount.k) * (player.prone ? 0.25 : 1);
   pos.x += Math.sin(S.bobT) * 0.012 * bob;
   pos.y -= Math.abs(Math.cos(S.bobT)) * 0.014 * bob;
   // Idle breathing.
@@ -1258,29 +1766,47 @@ function updateViewModel(dt) {
   pos.x += S.sprintT * 0.04; pos.y -= S.sprintT * 0.05;
   ry += S.sprintT * 0.6; rx -= S.sprintT * 0.2;
   if (player.crouch) rz += 0.04 * (1 - S.adsT);
+  if (player.prone) { pos.y -= 0.03; pos.z -= 0.02; }
+  // Braced against a corner the rifle cants with the lean; on a ledge it settles slightly lower.
+  if (mount.type === 'corner') rz += mount.side * 0.06 * mount.k;
+  else pos.y -= 0.008 * mount.k;
   pos.y -= S.landDip * 0.05;
   pos.z += S.kick * 0.045 * (1 - S.adsT * 0.4) * (d.type === 'sniper' ? 2 : 1);
   rx += S.kick * (d.type === 'pistol' ? 0.15 : 0.05);
-  const mb = m.mag.userData.base;
-  if (S.reloading) {
-    const p = S.reloadT / S.reloadDur;
-    const dip = Math.sin(Math.min(p, 1) * Math.PI);
-    rx += dip * 0.3; rz += dip * 0.55; pos.y -= dip * 0.06; pos.z -= dip * 0.04;
-    let off = 0;
-    if (p < 0.15) off = 0;
-    else if (p < 0.35) off = -((p - 0.15) / 0.2) * 0.35;
-    else if (p < 0.55) off = -0.35;
-    else if (p < 0.72) off = -0.35 * (1 - (p - 0.55) / 0.17);
-    m.mag.position.set(mb.x, mb.y + off, mb.z);
-    m.mag.visible = off > -0.33;
-  } else { m.mag.position.copy(mb); m.mag.visible = true; }
+  const reloadP = S.reloading ? Math.min(1, S.reloadT / S.reloadDur) : -1;
+  let pivot = null, holdQ = m.restQ;
+  if (reloadP >= 0) {
+    const r = m.reloadPose(reloadP, S.reloadEmpty);
+    pos.x += r.x; pos.y += r.y; pos.z += r.z; rx += r.rx; ry += r.ry; rz += r.rz;
+    pivot = r.pivot;
+  } else if (d.type === 'melee' && stab.t >= 0) {
+    const t = stab.t, cockT = STAB_TIMING.cock, hitT = STAB_TIMING.hit;
+    const cock = Math.min(1, t / cockT);
+    const thrust = t <= cockT ? 0 : Math.min(1, (t - cockT) / (hitT - cockT));
+    const recover = t <= hitT ? 0 : Math.min(1, (t - hitT) / (STAB_TIMING.dur - hitT));
+    const pull = cock * (1 - thrust), strike = thrust * (1 - recover);
+    // Cock back to the right, then hook the claw forward and across.
+    pos.x += 0.05 * pull - 0.14 * strike;
+    pos.y += 0.06 * pull - 0.02 * strike;
+    pos.z += 0.08 * pull - 0.3 * strike;
+    rx += 0.25 * pull - 0.2 * strike;
+    ry += -0.3 * pull + 0.5 * strike;
+    rz += -0.2 * pull + 0.3 * strike;
+  } else if (S.inspectT >= 0) {
+    const r = m.inspectPose(S.inspectT);
+    pos.x += r.x; pos.y += r.y; pos.z += r.z; rx += r.rx; ry += r.ry; rz += r.rz;
+    pivot = r.pivot;
+    if (r.q) holdQ = r.q;
+  }
   if (S.switchT > 0) { const k = S.switchT / 0.5; pos.y -= k * 0.3; rx -= k * 0.9; }
-  if (S.ifakT > 0) { pos.y -= 0.35; rx -= 0.6; }
+  if (medLow > 0) { pos.y -= 0.35 * medLow; rx -= 0.6 * medLow; }
   if (S.boltT > 0) { const b = Math.sin((1 - S.boltT / 1.15) * Math.PI); rz += b * 0.25; rx -= b * 0.08; pos.y -= b * 0.02; }
   g.position.copy(pos);
   g.rotation.set(rx, ry, rz);
+  if (holdQ) g.quaternion.multiply(holdQ);
+  if (pivot) g.position.add(pivot).sub(tmpV.copy(pivot).applyQuaternion(g.quaternion));
   g.updateMatrixWorld(true);
-  m.update(S.reloading ? S.reloadT / S.reloadDur : -1, d.type === 'pistol' ? S.kick : 0);
+  m.update(reloadP, d.type === 'pistol' ? S.kick : 0, S.reloadEmpty, S.reloadDur, S.boltT > 0 ? 1 - S.boltT / 1.15 : -1);
 
   // Light the weapon with the real sun direction (in camera space), dimmed when the player stands in shadow.
   S.sunT -= dt;
@@ -1290,10 +1816,15 @@ function updateViewModel(dt) {
   vmSun.intensity = lerp(0.25, 3.0, S.inSun);
 }
 const tmpQ = new THREE.Quaternion();
+const flowCenter = V();
 
 function updateEnemies(dt) {
   S.flowT -= dt;
-  if (S.flowT <= 0) { S.flowT = 0.4; updateFlow(player.pos.x, player.pos.z); }
+  if (S.flowT <= 0) {
+    S.flowT = 0.4;
+    if (net && net.isHost && net.centroid(flowCenter)) updateFlow(flowCenter.x, flowCenter.z);
+    else updateFlow(player.pos.x, player.pos.z);
+  }
   for (let i = enemies.length - 1; i >= 0; i--) updateEnemy(enemies[i], dt);
   for (let i = 0; i < enemies.length; i++) {
     const a = enemies[i];
@@ -1308,8 +1839,11 @@ function updateEnemies(dt) {
         b.pos.x += (dx / d) * push; b.pos.z += (dz / d) * push;
       }
     }
-    const px = player.pos.x - a.pos.x, pz = player.pos.z - a.pos.z, pd = Math.hypot(px, pz);
-    if (pd < 0.8 && pd > 1e-4) { a.pos.x -= (px / pd) * (0.8 - pd); a.pos.z -= (pz / pd) * (0.8 - pd); }
+    for (const s of [player, ...squad.bots, ...(net ? net.targets() : [])]) {
+      if (s.bot && !s.alive) continue;
+      const px = s.pos.x - a.pos.x, pz = s.pos.z - a.pos.z, pd = Math.hypot(px, pz);
+      if (pd < 0.8 && pd > 1e-4) { a.pos.x -= (px / pd) * (0.8 - pd); a.pos.z -= (pz / pd) * (0.8 - pd); }
+    }
   }
 }
 
@@ -1347,20 +1881,29 @@ const clock = new THREE.Clock();
 let menuT = 0;
 function loop() {
   requestAnimationFrame(loop);
-  const dt = Math.min(clock.getDelta(), 0.05);
+  frame(Math.min(clock.getDelta(), 0.05));
+}
+function frame(dt) {
   if (S.state === 'loading') return;
   if (S.state === 'playing') {
     S.time += dt;
-    updatePlayer(dt);
-    updateWeapon(dt);
-    updateViewModel(dt);
-    updateEnemies(dt);
-    updateRockets(dt);
-    updateGrenades(dt);
-    updatePickups(dt);
-    updateWaves(dt);
-    updateHUD(dt);
-    drawMinimap();
+    if (net && net.online) net.tick(dt);
+    if (S.state === 'playing') {
+      updatePlayer(dt);
+      updateWeapon(dt);
+      updateViewModel(dt);
+      updateBody(dt);
+      if (!(net && net.isClient)) {
+        squad.update(dt, true);
+        updateEnemies(dt);
+        updateRockets(dt);
+        updateGrenades(dt);
+        updatePickups(dt);
+        updateWaves(dt);
+      }
+      updateHUD(dt);
+      drawMinimap();
+    }
   } else if (S.state === 'menu') {
     S.time += dt;
     menuT += dt;
@@ -1371,12 +1914,30 @@ function loop() {
     vmRoot.visible = false;
   } else if (S.state === 'dead') {
     S.time += dt;
-    player.eye = approach(player.eye, 0.3, dt * 2);
-    camera.position.y = player.pos.y + player.eye;
-    camera.rotation.z = approach(camera.rotation.z, 0.8, dt);
+    S.deadT += dt;
+    if (net && net.online) net.tick(dt);
+    if (net && net.isHost && S.state === 'dead') {
+      updateEnemies(dt);
+      updateRockets(dt);
+      updateGrenades(dt);
+      updateWaves(dt);
+    }
+    if (S.tpDead) {
+      // Slow orbit around the body.
+      const a = player.yaw + S.deadT * 0.12, r = 3.4 - Math.min(1, S.deadT / 3) * 0.8;
+      camera.position.set(player.pos.x + Math.sin(a) * r, player.pos.y + 1.9, player.pos.z + Math.cos(a) * r);
+      camera.lookAt(player.pos.x, player.pos.y + 0.3, player.pos.z);
+    } else {
+      player.eye = approach(player.eye, 0.3, dt * 2);
+      camera.position.y = player.pos.y + player.eye;
+      camera.rotation.z = approach(camera.rotation.z, 0.8, dt);
+    }
     camera.updateMatrixWorld();
     vmRoot.visible = false;
+    updateBody(dt);
+    squad.update(dt, true);
     updateEnemies(dt);
+    updateGrenades(dt);
   }
   if (S.state !== 'paused') {
     updateLights(dt);
@@ -1426,12 +1987,47 @@ function buildMenu() {
     b.onclick = () => applyQuality(id);
     qd.appendChild(b);
   }
-  $('deploy-btn').onclick = () => { if (selectedClass) deploy(selectedClass); };
+  const sq = $('squad-size');
+  for (let n = 0; n <= MAX_BOTS; n++) {
+    const b = document.createElement('button');
+    b.textContent = n === 0 ? 'SOLO' : `${n} BOT${n > 1 ? 'S' : ''}`;
+    b.classList.toggle('active', n === botCount);
+    b.onclick = () => {
+      botCount = n;
+      localStorage.setItem('idf-bots', String(n));
+      sq.querySelectorAll('button').forEach((x, i) => x.classList.toggle('active', i === n));
+    };
+    sq.appendChild(b);
+  }
+  $('deploy-btn').onclick = () => {
+    if (!selectedClass) return;
+    if (net && net.isClient) { net.ready(selectedClass); return; }
+    deploy(selectedClass);
+  };
+  const nameBox = $('net-name');
+  nameBox.value = localStorage.getItem('idf-name') || '';
+  const remember = () => localStorage.setItem('idf-name', nameBox.value.trim());
+  $('net-host').onclick = async () => {
+    if (!net || !net.available) { $('net-status').textContent = 'Co-op runs in the desktop app.'; return; }
+    remember();
+    try { await net.host(nameBox.value); } catch (err) { $('net-status').textContent = 'Could not host (' + (err.message || 'port in use') + ').'; }
+  };
+  $('net-join').onclick = async () => {
+    if (!net || !net.available) { $('net-status').textContent = 'Co-op runs in the desktop app.'; return; }
+    remember();
+    try { await net.join(nameBox.value, $('net-addr').value); }
+    catch { $('net-status').textContent = 'Could not reach that host.'; }
+  };
   $('resume-btn').onclick = resumeGame;
   $('quit-btn').onclick = toMenu;
   $('redeploy-btn').onclick = toMenu;
   $('credits-btn').onclick = showCredits;
   $('credits-close').onclick = () => $('credits').classList.add('hidden');
+  // Only the desktop app can close its own window.
+  if (navigator.userAgent.includes('Electron')) {
+    $('exit-btn').classList.remove('hidden');
+    $('exit-btn').onclick = () => window.close();
+  }
 }
 
 let creditsLoaded = false;
@@ -1478,8 +2074,49 @@ async function boot() {
   setupSun();
 
   initEffects(scene, assets.tex);
+  const beforeWorld = new Set(scene.children);
   buildWorld(scene);
+  singlePassTransparent(scene);
+  // The map never moves: compute its matrices once so the per-frame scene update skips it. The scene
+  // itself must not auto-update either, or it forces every descendant to recompute. Sprites are the
+  // smoke plumes the map adds, which drift every frame.
+  for (const o of scene.children) {
+    if (beforeWorld.has(o)) continue;
+    o.traverse((x) => { if (!x.isSprite) { x.matrixAutoUpdate = false; x.updateMatrix(); } });
+  }
+  scene.matrixAutoUpdate = false;
+  scene.updateMatrix();
+  scene.updateMatrixWorld(true);
   buildNav();
+  net = createNet({
+    scene,
+    getPlayer: () => player,
+    getState: () => S,
+    enemies: () => enemies,
+    grenades: () => grenades,
+    rockets: () => rockets,
+    spawnPoint: () => world.spawn,
+    enter(cls, spawn) { deploy(cls); player.pos.set(spawn.x, spawn.y, spawn.z); },
+    applyShot, applyStab, spawnGrenade: spawnGrenadeFrom, explodeAt: explodeFrom,
+    hitmarker: showHitmarker,
+    applyVitals(you) {
+      if (!net.isClient) return;
+      const prev = player.hp;
+      player.hp = you.hp;
+      if (Number.isFinite(you.armor)) player.armor = you.armor;
+      if (player.hp < prev - 0.4 && S.state === 'playing') { S.hurtT = Math.min(1, S.hurtT + 0.5); SFX.playHurt(); }
+      if (player.hp <= 0 && S.state === 'playing') { player.hp = 0; gameOver(false, -1); }
+      if (player.hp > 0 && S.state === 'dead') netRevive();
+    },
+    applyWave(m) {
+      S.wave = m.wave;
+      S.intermission = m.intermission;
+      S.alive = m.alive;
+      S.toSpawn = m.toSpawn;
+    },
+    disconnected() { if (S.state !== 'menu') toMenu(); },
+    backToMenu() { if (S.state !== 'menu') toMenu(); },
+  });
   buildMenu();
   applyQuality(qualityId);
 
@@ -1492,9 +2129,13 @@ async function boot() {
   const warm = createCharacter('hamas', 'ak');
   scene.add(warm.root);
   warm.root.position.set(0, -50, 0);
+  body = createPlayerBody();
+  body.setWeapon('tavor');
+  scene.add(body.root);
   renderer.compile(scene, camera);
   scene.remove(warm.root);
   warm.dispose();
+  body.root.visible = false;
 
   $('loading').classList.add('hidden');
   $('menu').classList.remove('hidden');
@@ -1502,4 +2143,4 @@ async function boot() {
 }
 boot();
 loop();
-window.__game = { S, player, enemies, mouse, keys, camera, vmCamera, scene, renderer, spawnEnemy, world, deploy, CLASSES, assets, sun, get pipe() { return pipe; }, applyQuality };
+window.__game = { S, player, enemies, mouse, keys, camera, vmCamera, scene, renderer, spawnEnemy, world, deploy, CLASSES, assets, sun, frame, damagePlayer, squad, mount, colliders, detectMount, nade, startGrenade, grenades, stab, get net() { return net; }, get medVM() { return medVM; }, get body() { return body; }, get pipe() { return pipe; }, applyQuality };

@@ -11,8 +11,8 @@ export const LAYER_FX = 1;
 export const LAYER_HITBOX = 2;
 
 export const QUALITY = {
-  ultra: { label: 'ULTRA', pixelRatio: 2, shadow: 4096, shadowRange: 70, ao: true, bloom: true, msaa: 4 },
-  high: { label: 'HIGH', pixelRatio: 1.25, shadow: 4096, shadowRange: 65, ao: true, bloom: true, msaa: 4 },
+  ultra: { label: 'ULTRA', pixelRatio: 1.5, shadow: 4096, shadowRange: 70, ao: true, bloom: true, msaa: 4 },
+  high: { label: 'HIGH', pixelRatio: 1.25, shadow: 2048, shadowRange: 65, ao: true, bloom: true, msaa: 4 },
   medium: { label: 'MEDIUM', pixelRatio: 1, shadow: 2048, shadowRange: 60, ao: false, bloom: true, msaa: 4 },
   low: { label: 'LOW', pixelRatio: 0.85, shadow: 1024, shadowRange: 50, ao: false, bloom: false, msaa: 0 },
 };
@@ -108,6 +108,8 @@ export function createPipeline(renderer, scene, camera, vmScene, vmCamera, q) {
   renderer.setPixelRatio(pr);
   const w = window.innerWidth, h = window.innerHeight;
   const rt = new THREE.WebGLRenderTarget(w * pr, h * pr, { type: THREE.HalfFloatType, samples: q.msaa });
+  // Ambient occlusion reads the colour pass's depth instead of drawing the whole scene a second time.
+  if (q.ao) rt.depthTexture = new THREE.DepthTexture(w * pr, h * pr);
   const composer = new EffectComposer(renderer, rt);
   composer.setPixelRatio(pr);
   composer.setSize(w, h);
@@ -116,15 +118,21 @@ export function createPipeline(renderer, scene, camera, vmScene, vmCamera, q) {
 
   let gtao = null;
   if (q.ao) {
-    gtao = new GTAOPass(scene, camera, w, h);
+    // Half resolution: occlusion is low frequency, and this pass was most of the cost above Medium.
+    const aoSize = (W, H) => [Math.max(1, Math.round(W / 2)), Math.max(1, Math.round(H / 2))];
+    gtao = new GTAOPass(scene, camera, ...aoSize(w * pr, h * pr));
+    const setSize = gtao.setSize.bind(gtao);
+    gtao.setSize = (W, H) => setSize(...aoSize(W, H));
     gtao.blendIntensity = 0.9;
-    gtao.updateGtaoMaterial({ radius: 1.4, distanceExponent: 1.5, thickness: 2, scale: 1.2, samples: 12, distanceFallOff: 1 });
-    gtao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 5, rings: 2, samples: 12 });
+    gtao.updateGtaoMaterial({ radius: 1.4, distanceExponent: 1.5, thickness: 2, scale: 1.2, samples: 8, distanceFallOff: 1 });
+    gtao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 3, rings: 2, samples: 8 });
+    // Normals are reconstructed from depth. The composer ping-pongs its targets, so point the AO at
+    // whichever one the scene was just drawn into.
+    gtao.setGBuffer(rt.depthTexture);
     const orig = gtao.render.bind(gtao);
-    gtao.render = (...args) => {
-      camera.layers.disable(LAYER_FX);
-      orig(...args);
-      camera.layers.enable(LAYER_FX);
+    gtao.render = (renderer, writeBuffer, readBuffer, ...rest) => {
+      gtao.gtaoMaterial.uniforms.tDepth.value = gtao.pdMaterial.uniforms.tDepth.value = readBuffer.depthTexture;
+      orig(renderer, writeBuffer, readBuffer, ...rest);
     };
     composer.addPass(gtao);
   }

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
+import { dropIdleMorphs, singlePassTransparent, mergeSkinned, mergeStatic } from './merge.js';
 
 // Downloaded models (see assets/models/credits.json). Every gun is normalised to one frame:
 // metres, muzzle toward -Z, +Y up, origin at the bounding-box centre. Points below are in that frame.
@@ -41,7 +42,13 @@ export const GUNS = {
   glock: {
     file: 'glock', rotY: -Math.PI / 2, len: 0.186,
     grip: [0, -0.03, 0.06], fore: [0, -0.03, 0.06], muzzle: [0, 0.05, -0.093], sightY: 0.062, sightZ: 0.085, eject: 0,
+    slideBox: [[-0.02, 0.03, -0.1], [0.02, 0.08, 0.1]],
     mag: { box: [[-0.02, -0.2, 0.02], [0.02, -0.05, 0.12]] },
+  },
+  // Already in metres and standing up (see tools/obj2glb.mjs): ring on top, claw curving to -Z.
+  karambit: {
+    file: 'karambit', rotY: 0, scale: 1,
+    grip: [0, 0.041, 0.035], fore: [0, 0.041, 0.035], muzzle: [0, -0.1, -0.048], sightY: 0, eject: 0,
   },
   jericho: {
     file: 'jericho', rotY: Math.PI / 2, len: 0.207,
@@ -64,7 +71,17 @@ export const models = {};
 export function loadModels(manager, base = '', only = null) {
   const loader = new GLTFLoader(manager).setMeshoptDecoder(MeshoptDecoder);
   const files = new Set([...Object.values(GUNS).map((g) => g.file), ...Object.values(PROPS).map((p) => p.file), ...CHARACTERS]);
-  for (const f of files) if (!only || only.includes(f)) loader.load(`${base}assets/models/${f}.glb`, (g) => (models[f] = g));
+  for (const f of files) {
+    if (only && !only.includes(f)) continue;
+    loader.load(`${base}assets/models/${f}.glb`, (g) => {
+      if (CHARACTERS.includes(f)) {
+        dropIdleMorphs(g.scene);
+        singlePassTransparent(g.scene);
+        mergeSkinned(g.scene);
+      }
+      models[f] = g;
+    });
+  }
 }
 
 // Moves triangles whose centroid lies inside `box` (normalised-frame coords) into separate meshes.
@@ -106,7 +123,7 @@ function prepGun(id) {
   inner.updateMatrixWorld(true);
   const box = new THREE.Box3().setFromObject(inner, true);
   const size = box.getSize(new THREE.Vector3());
-  const s = cfg.len / size.z;
+  const s = cfg.scale ?? cfg.len / size.z;
   inner.scale.setScalar(s);
   const center = box.getCenter(new THREE.Vector3()).multiplyScalar(s);
   inner.position.set(-center.x, -center.y, -center.z);
@@ -124,8 +141,9 @@ function prepGun(id) {
   let mag = [];
   if (cfg.mag?.names) src.traverse((o) => { if (cfg.mag.names.includes(o.name)) mag.push(o); });
   if (cfg.mag?.box) mag = splitByBox(src, toBox(cfg.mag.box), frameInv);
-  const slide = [];
+  let slide = [];
   if (cfg.slide) src.traverse((o) => { if (cfg.slide.includes(o.name)) slide.push(o); });
+  if (cfg.slideBox) slide = splitByBox(src, toBox(cfg.slideBox), frameInv);
   // Re-parent mag/slide parts under pivot groups living in the gun frame so they can be animated simply.
   const pivot = (parts) => {
     const p = new THREE.Group();
@@ -135,6 +153,10 @@ function prepGun(id) {
     return p;
   };
   const magG = pivot(mag), slideG = pivot(slide);
+  // One mesh per material for the body and for each moving part (the models come as dozens of pieces).
+  mergeStatic(inner, root);
+  mergeStatic(magG);
+  mergeStatic(slideG);
   templates[id] = { root, size: size.multiplyScalar(s), magIdx: root.children.indexOf(magG), slideIdx: root.children.indexOf(slideG) };
 }
 
