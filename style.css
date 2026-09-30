@@ -147,6 +147,14 @@ button.secondary { background: #3a3628; color: #e8e4d8; }
 .deploy-col { display: flex; flex-direction: column; gap: 8px; }
 .deploy-col input { font-family: inherit; font-size: 13px; letter-spacing: 0.5px; padding: 8px 10px; background: #16150f; color: #f2efe4; border: 1px solid #4a4636; user-select: text; }
 #net-status { font-size: 12px; line-height: 1.4; color: #b5ad96; white-space: pre-wrap; }
+.settings { display: flex; flex-direction: column; gap: 4px; width: 100%; }
+.settings input[type="range"] { width: 100%; accent-color: #c8b270; }
+#pause .settings { margin: 4px 0 8px; text-align: left; }
+#gameover.spectate-mode { background: none; align-items: flex-end; padding-bottom: 24px; pointer-events: none; }
+#gameover.spectate-mode .panel { pointer-events: auto; }
+#spectate { font-size: 14px; letter-spacing: 2px; color: #c8b270; }
+#spectate b { color: #fff; }
+#spectate div { font-size: 11px; letter-spacing: 1px; color: #b5ad96; }
 .menu-row { display: flex; gap: 8px; }
 .menu-row button { flex: 1; padding-left: 12px; padding-right: 12px; }
 .q-label { font-size: 11px; letter-spacing: 3px; color: #c8b270; margin-top: 6px; }

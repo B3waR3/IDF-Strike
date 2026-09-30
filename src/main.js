@@ -142,6 +142,27 @@ const canvas = renderer.domElement;
 const scene = new THREE.Scene();
 
 const BASE_FOV = 75;
+const settings = {
+  volume: Number(localStorage.getItem('idf-volume') ?? 75),
+  sens: Number(localStorage.getItem('idf-sens') ?? 100),
+  fov: Number(localStorage.getItem('idf-fov') ?? BASE_FOV),
+};
+function lookFov() { return clamp(settings.fov, 60, 100); }
+function applySettings() {
+  settings.volume = clamp(settings.volume, 0, 100);
+  settings.sens = clamp(settings.sens, 20, 250);
+  settings.fov = lookFov();
+  localStorage.setItem('idf-volume', String(settings.volume));
+  localStorage.setItem('idf-sens', String(settings.sens));
+  localStorage.setItem('idf-fov', String(settings.fov));
+  SFX.setVolume(settings.volume / 100);
+  document.querySelectorAll('.set-vol').forEach((el) => { el.value = settings.volume; });
+  document.querySelectorAll('.set-sens').forEach((el) => { el.value = settings.sens; });
+  document.querySelectorAll('.set-fov').forEach((el) => { el.value = settings.fov; });
+  document.querySelectorAll('.set-vol-n').forEach((el) => { el.textContent = Math.round(settings.volume); });
+  document.querySelectorAll('.set-sens-n').forEach((el) => { el.textContent = (settings.sens / 100).toFixed(2); });
+  document.querySelectorAll('.set-fov-n').forEach((el) => { el.textContent = Math.round(settings.fov); });
+}
 const camera = new THREE.PerspectiveCamera(BASE_FOV, innerWidth / innerHeight, 0.05, 1500);
 camera.rotation.order = 'YXZ';
 camera.layers.enable(LAYER_FX);
@@ -270,6 +291,7 @@ function makeWeapon(id) {
 let glintMat = null;
 let enemySeq = 1, nadeSeq = 1, rocketSeq = 1;
 let net = null;
+let spectateI = 0;
 function pickEnemyType() {
   const w = S.wave;
   const pool = [['hamas', 50], ['pij', 30]];
@@ -351,7 +373,7 @@ function updateEnemy(e, dt) {
     if (S.state === 'playing' || (net && net.isHost)) {
       const cands = [player, ...squad.alive(), ...(net ? net.targets() : [])]
         .filter((c) => c !== player || S.state === 'playing')
-        .map((c) => ({ c, d: Math.hypot(c.pos.x - e.pos.x, c.pos.z - e.pos.z) * (c === player ? 0.85 : 1) }))
+        .map((c) => ({ c, d: Math.hypot(c.pos.x - e.pos.x, c.pos.z - e.pos.z) }))
         .filter((o) => o.d < t.range)
         .sort((a, b) => a.d - b.d);
       for (const { c } of cands) {
@@ -457,7 +479,7 @@ function enemyAttack(e, dt, dist) {
   e.fireT = t.burstGap;
   const T = e.tgt, sp = Math.hypot(T.vel.x, T.vel.z);
   let chance = t.acc * (1 - Math.min(dist / t.range, 1) * 0.6) * (sp > 1 ? 0.65 : 1) * (T.prone ? 0.45 : T.crouch ? 0.75 : 1) * (1 + (S.wave - 1) * 0.04);
-  if (T === player && player.sprinting) chance *= 0.8;
+  if (T.sprinting) chance *= 0.8;
   enemyShot(e, dist, Math.random() < Math.min(chance, 0.75), t.dmg * rand(0.8, 1.25));
 }
 
@@ -548,7 +570,7 @@ function killEnemy(e, headshot, byNade, dir, blast = false, credit = null) {
   e.dead = true;
   e.headDead = !!headshot;
   S.alive--;
-  if (credit && credit.remote) { /* the shooter's own client keeps their tally */ }
+  if (credit && credit.remote) net.send({ t: 'marker', kill: true, head: !!headshot, nade: !!byNade, tally: true }, credit.id);
   else if (credit) player.score += 25;
   else {
     player.kills++;
@@ -699,13 +721,13 @@ function updateGrenades(dt) {
     gr.m.position.copy(next);
     gr.m.rotation.x += gr.vel.length() * dt * 3;
     if (gr.fuse <= 0) {
-      explode(gr.pos.clone().add(V(0, 0.2, 0)), 9, 210, true, UP, V(gr.pos.x, groundHeightAt(gr.pos.x, gr.pos.z, gr.pos.y + 0.1, 0), gr.pos.z));
+      explode(gr.pos.clone().add(V(0, 0.2, 0)), 9, 210, true, UP, V(gr.pos.x, groundHeightAt(gr.pos.x, gr.pos.z, gr.pos.y + 0.1, 0), gr.pos.z), gr.owner || null);
       scene.remove(gr.m);
       grenades.splice(i, 1);
     }
   }
 }
-function explode(pos, radius, maxDmg, byPlayer, normal, surfPoint) {
+function explode(pos, radius, maxDmg, byPlayer, normal, surfPoint, credit = null) {
   const dist = pos.distanceTo(camera.position);
   SFX.playExplosion(pos, 1);
   SFX.concuss(clamp(1.25 - dist / 14, 0, 1));
@@ -724,9 +746,9 @@ function explode(pos, radius, maxDmg, byPlayer, normal, surfPoint) {
     const d = c.distanceTo(pos);
     if (d < radius && hasLOS(pos, c)) {
       const dmg = maxDmg * (1 - d / radius);
-      if (byPlayer) showHitmarker(e.hp - dmg <= 0);
+      if (byPlayer && !credit) showHitmarker(e.hp - dmg <= 0);
       e.hp -= dmg; e.flinch = 0.5;
-      if (e.hp <= 0) killEnemy(e, false, byPlayer, c.clone().sub(pos).normalize(), true);
+      if (e.hp <= 0) killEnemy(e, false, byPlayer, c.clone().sub(pos).normalize(), true, credit);
     }
   }
   const pc = V(player.pos.x, player.pos.y + 1, player.pos.z);
@@ -903,7 +925,7 @@ function resolveMelee(at, credit) {
   let best = null, bestD = STAB_RANGE;
   for (const e of enemies) {
     if (e.dead) continue;
-    const dx = e.pos.x - player.pos.x, dz = e.pos.z - player.pos.z;
+    const dx = e.pos.x - at.pos.x, dz = e.pos.z - at.pos.z;
     const horiz = Math.hypot(dx, dz);
     if (horiz > STAB_RANGE || horiz < 0.05) continue;
     if (Math.abs(e.pos.y + 1 - origin.y) > 1.5) continue;
@@ -912,7 +934,7 @@ function resolveMelee(at, credit) {
     if (horiz < bestD) { best = e; bestD = horiz; }
   }
   if (!best) return;
-  const bx = player.pos.x - best.pos.x, bz = player.pos.z - best.pos.z;
+  const bx = at.pos.x - best.pos.x, bz = at.pos.z - best.pos.z;
   const behind = Math.hypot(bx, bz) || 1;
   // Enemy forward is (sin rot, cos rot); the player is behind when that points away from them.
   const back = (bx * Math.sin(best.rot) + bz * Math.cos(best.rot)) / behind < -0.5;
@@ -920,7 +942,7 @@ function resolveMelee(at, credit) {
   const willKill = back || best.hp - STAB_DMG <= 0;
   if (back && !credit) flashMsg('BACKSTAB', 0.8);
   const hit = damageEnemy(best, back ? 9999 : STAB_DMG, point, V(fx, 0.1, fz), false, credit);
-  if (credit && credit.remote) net.send({ t: 'marker', kill: hit.kill, head: back }, credit.id);
+  if (credit && credit.remote) { if (!hit.kill) net.send({ t: 'marker', kill: false, head: back }, credit.id); }
   else showHitmarker(willKill, back);
 }
 function tryStab() {
@@ -1228,7 +1250,7 @@ function drawMinimap() {
     c.fillStyle = (e.sniper || e.t?.sniper) ? '#ffcf3c' : '#ff4a3c';
     c.beginPath(); c.arc(e.pos.x, e.pos.z, 1.6, 0, 7); c.fill();
   }
-  if (net && net.isClient) {
+  if (net && net.online) {
     c.fillStyle = '#9ad0ff';
     for (const b of net.peerMarks()) { c.beginPath(); c.arc(b.x, b.z, 1.5, 0, 7); c.fill(); }
   }
@@ -1281,6 +1303,7 @@ document.addEventListener('keyup', (e) => {
   if (e.code === 'KeyG') nade.held = false;
 });
 document.addEventListener('mousedown', (e) => {
+  if (e.button === 0 && S.state === 'dead' && net && net.online) spectateI++;
   if (S.state !== 'playing') return;
   if (document.pointerLockElement !== canvas) { canvas.requestPointerLock(); return; }
   if (e.button === 0) { mouse.left = true; S.triggerFresh = true; }
@@ -1298,7 +1321,7 @@ document.addEventListener('wheel', (e) => {
 });
 document.addEventListener('mousemove', (e) => {
   if (S.state !== 'playing' || document.pointerLockElement !== canvas) return;
-  const sens = 0.0022 * (camera.fov / BASE_FOV);
+  const sens = 0.0022 * (settings.sens / 100) * (camera.fov / lookFov());
   player.yaw -= e.movementX * sens;
   player.pitch -= e.movementY * sens;
   player.pitch = clamp(player.pitch, -1.5, 1.5);
@@ -1338,7 +1361,7 @@ function applyShot(peer, m) {
   if (h.distance > def.range) dmg *= 0.75;
   const credit = { name: peer.name, def: { name: def.tag || def.name }, remote: true, id: peer.id };
   const hit = damageEnemy(e, dmg, h.point, dir, head, credit);
-  net.send({ t: 'marker', kill: hit.kill, head }, peer.id);
+  if (!hit.kill) net.send({ t: 'marker', kill: false, head }, peer.id);
   if (def.tracerEvery) spawnTracer(origin, h.point, 0xffc880, 0.018, 700);
 }
 function applyStab(peer, m) {
@@ -1357,7 +1380,10 @@ function spawnGrenadeFrom(peer, m) {
   g.spoon.visible = g.ring.visible = false;
   g.root.position.copy(pos);
   scene.add(g.root);
-  grenades.push({ m: g.root, pos, vel, fuse: Math.min(4, Math.max(0.05, m.fuse || 1)), gid: nadeSeq++ });
+  grenades.push({
+    m: g.root, pos, vel, fuse: Math.min(4, Math.max(0.05, m.fuse || 1)), gid: nadeSeq++,
+    owner: { name: peer.name, def: { name: 'M67 Frag' }, remote: true, id: peer.id },
+  });
 }
 function explodeFrom(peer, m) {
   const p = V(m.x, m.y, m.z);
@@ -1374,6 +1400,8 @@ function netRevive() {
   camera.rotation.z = 0;
   body.revive();
   $('gameover').classList.add('hidden');
+  $('gameover').classList.remove('spectate-mode');
+  $('spectate').classList.add('hidden');
   $('hud').classList.remove('hidden');
   canvas.requestPointerLock();
 }
@@ -1500,6 +1528,8 @@ function toMenu() {
   $('pause').classList.add('hidden');
   $('gameover').classList.add('hidden');
   $('hud').classList.add('hidden');
+  $('spectate').classList.add('hidden');
+  $('gameover').classList.remove('spectate-mode');
   $('menu').classList.remove('hidden');
 }
 
@@ -1671,7 +1701,7 @@ function updateWeapon(dt) {
   const suppAmp = S.supp * 0.004 * (1 - 0.5 * mount.k);
   const swayP = Math.sin(S.swayT * 1.1) * (amp + suppAmp), swayY = Math.sin(S.swayT * 0.7) * (amp + suppAmp) * 1.3;
 
-  const targetFov = scoped ? d.adsFov : lerp(BASE_FOV, d.scope ? 55 : d.adsFov, S.adsT) + (player.sprinting ? 6 : 0);
+  const targetFov = scoped ? d.adsFov : lerp(lookFov(), d.scope ? 55 : d.adsFov, S.adsT) + (player.sprinting ? 6 : 0);
   const fov = lerp(camera.fov, targetFov, Math.min(1, dt * 18));
   if (Math.abs(fov - camera.fov) > 0.01) { camera.fov = fov; camera.updateProjectionMatrix(); }
   const vmFov = lerp(58, 46, S.adsT);
@@ -1910,7 +1940,7 @@ function frame(dt) {
     const a = menuT * 0.035;
     camera.position.set(Math.sin(a) * 58, 14 + Math.sin(menuT * 0.1) * 3, Math.cos(a) * 58);
     camera.lookAt(Math.sin(a + 0.8) * 10, 5, Math.cos(a + 0.8) * 10);
-    if (camera.fov !== BASE_FOV) { camera.fov = BASE_FOV; camera.updateProjectionMatrix(); }
+    if (Math.abs(camera.fov - lookFov()) > 0.5) { camera.fov = lookFov(); camera.updateProjectionMatrix(); }
     vmRoot.visible = false;
   } else if (S.state === 'dead') {
     S.time += dt;
@@ -1922,6 +1952,20 @@ function frame(dt) {
       updateGrenades(dt);
       updateWaves(dt);
     }
+    const allies = net && net.online ? net.livingAllies() : [];
+    const spec = $('spectate');
+    if (allies.length) {
+      const s = allies[((spectateI % allies.length) + allies.length) % allies.length];
+      const back = 2.8;
+      camera.position.set(s.x + Math.sin(s.yaw) * back, s.y + (s.eye || 1.6) + 0.35, s.z + Math.cos(s.yaw) * back);
+      camera.lookAt(s.x, s.y + (s.eye || 1.6) * 0.72, s.z);
+      camera.rotation.z = 0;
+      spec.classList.remove('hidden');
+      spec.querySelector('b').textContent = s.name;
+      $('gameover').classList.add('spectate-mode');
+    } else {
+      spec.classList.add('hidden');
+      $('gameover').classList.remove('spectate-mode');
     if (S.tpDead) {
       // Slow orbit around the body.
       const a = player.yaw + S.deadT * 0.12, r = 3.4 - Math.min(1, S.deadT / 3) * 0.8;
@@ -1931,6 +1975,7 @@ function frame(dt) {
       player.eye = approach(player.eye, 0.3, dt * 2);
       camera.position.y = player.pos.y + player.eye;
       camera.rotation.z = approach(camera.rotation.z, 0.8, dt);
+    }
     }
     camera.updateMatrixWorld();
     vmRoot.visible = false;
@@ -2023,6 +2068,18 @@ function buildMenu() {
   $('redeploy-btn').onclick = toMenu;
   $('credits-btn').onclick = showCredits;
   $('credits-close').onclick = () => $('credits').classList.add('hidden');
+  const tpl = $('settings-tpl');
+  for (const id of ['settings-menu', 'settings-pause']) $(id).appendChild(tpl.content.cloneNode(true));
+  const bindSet = (sel, key) => {
+    document.querySelectorAll(sel).forEach((el) => el.addEventListener('input', () => {
+      settings[key] = Number(el.value);
+      applySettings();
+    }));
+  };
+  bindSet('.set-vol', 'volume');
+  bindSet('.set-sens', 'sens');
+  bindSet('.set-fov', 'fov');
+  applySettings();
   // Only the desktop app can close its own window.
   if (navigator.userAgent.includes('Electron')) {
     $('exit-btn').classList.remove('hidden');
@@ -2099,6 +2156,12 @@ async function boot() {
     enter(cls, spawn) { deploy(cls); player.pos.set(spawn.x, spawn.y, spawn.z); },
     applyShot, applyStab, spawnGrenade: spawnGrenadeFrom, explodeAt: explodeFrom,
     hitmarker: showHitmarker,
+    noteHit() { player.hits++; },
+    creditKill(head, nadeKill) {
+      player.kills++;
+      if (head) player.headshots++;
+      player.score += 100 + (head ? 50 : 0) + (nadeKill ? 25 : 0);
+    },
     applyVitals(you) {
       if (!net.isClient) return;
       const prev = player.hp;

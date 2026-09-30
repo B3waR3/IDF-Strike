@@ -86,6 +86,7 @@
           </div>
           <input id="net-addr" placeholder="Host address, e.g. 192.168.1.20" autocomplete="off">
           <div id="net-status">Host a mission, or join the address the host is shown. Same Wi-Fi works directly. From another house, connect Tailscale or ZeroTier first, then use the address it gives the host.</div>
+          <div id="settings-menu"></div>
           <div class="menu-row">
             <button id="credits-btn" class="secondary">CREDITS</button>
             <button id="exit-btn" class="secondary hidden">QUIT</button>
@@ -117,6 +118,7 @@
   <div id="pause" class="screen hidden">
     <div class="panel">
       <h2>PAUSED</h2>
+      <div id="settings-pause"></div>
       <button id="resume-btn">RESUME</button>
       <button id="quit-btn" class="secondary">ABORT MISSION</button>
     </div>
@@ -135,6 +137,7 @@
   <div id="gameover" class="screen hidden">
     <div class="panel">
       <h2 id="go-title">KIA</h2>
+      <div id="spectate" class="hidden">SPECTATING <b></b><div>Click to switch</div></div>
       <div id="go-stats"></div>
       <button id="redeploy-btn">REDEPLOY</button>
     </div>
@@ -154,6 +157,16 @@
     addEventListener('error', (e) => __errs.push(String(e.message) + ' @' + (e.filename || '') + ':' + (e.lineno || '')));
     addEventListener('unhandledrejection', (e) => __errs.push('rejection: ' + (e.reason && (e.reason.stack || e.reason))));
   </script>
+  <template id="settings-tpl">
+    <div class="settings">
+      <label class="q-label">VOLUME <b class="set-vol-n"></b></label>
+      <input class="set-vol" type="range" min="0" max="100" step="1">
+      <label class="q-label">MOUSE SENSITIVITY <b class="set-sens-n"></b></label>
+      <input class="set-sens" type="range" min="20" max="250" step="1">
+      <label class="q-label">FIELD OF VIEW <b class="set-fov-n"></b></label>
+      <input class="set-fov" type="range" min="60" max="100" step="1">
+    </div>
+  </template>
   <script type="importmap">
     {
       "imports": {

@@ -1,6 +1,7 @@
 const rand = (a, b) => a + Math.random() * (b - a);
 
-let ctx = null, out = null, dry = null, wet = null, lp = null, noise = null, pink = null;
+let ctx = null, out = null, dry = null, wet = null, lp = null, noise = null, pink = null, master = null;
+let volume = 0.75;
 let ring = null, ringGain = null, windGain = null, ambT = 4, boomT = 12;
 const listener = { x: 0, y: 0, z: 0, yaw: 0 };
 
@@ -36,7 +37,7 @@ export function initAudio() {
   ctx = new (window.AudioContext || window.webkitAudioContext)();
   const comp = ctx.createDynamicsCompressor();
   comp.threshold.value = -14; comp.knee.value = 8; comp.ratio.value = 5; comp.attack.value = 0.002; comp.release.value = 0.2;
-  const master = ctx.createGain(); master.gain.value = 0.75;
+  master = ctx.createGain(); master.gain.value = volume;
   lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 20000; lp.Q.value = 0.5;
   comp.connect(lp); lp.connect(master); master.connect(ctx.destination);
   out = comp;
@@ -64,6 +65,10 @@ export function initAudio() {
   w.start(); lfo.start(); lfo2.start();
 }
 
+export function setVolume(v) {
+  volume = Math.max(0, Math.min(1, v));
+  if (master) master.gain.value = volume;
+}
 export function setListener(pos, yaw) { listener.x = pos.x; listener.y = pos.y; listener.z = pos.z; listener.yaw = yaw; }
 function spatial(pos) {
   if (!pos) return { dist: 0, pan: 0 };

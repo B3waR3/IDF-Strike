@@ -361,7 +361,11 @@ export function createNet(hooks) {
       } catch (err) { window.__netErr = String(err && err.stack || err); }
     }
     else if (m.t === 'snap') takeSnap(m);
-    else if (m.t === 'marker') hooks.hitmarker(!!m.kill, !!m.head);
+    else if (m.t === 'marker') {
+      hooks.hitmarker(!!m.kill, !!m.head);
+      if (hooks.noteHit) hooks.noteHit();
+      if (m.tally) hooks.creditKill(!!m.head, !!m.nade);
+    }
     else if (m.t === 'full') { status('That mission is full (4 players).'); stop(); }
     else if (m.t === 'closed') { if (role === 'client') { status('Lost the host.'); hooks.disconnected(); role = null; } }
     else if (m.t === 'menu') { live = false; cls = null; clearWorld(); hooks.backToMenu(); }
@@ -385,6 +389,15 @@ export function createNet(hooks) {
     enemyMarks,
     debug() {
       return { role, id: myId, peers: peers.size, bodies: bodies.size, foes: foes.size, live };
+    },
+    livingAllies() {
+      const out = [];
+      if (role === 'host') {
+        for (const p of peers.values()) if (p.alive && p.seenAt) out.push({ name: p.name, x: p.x, y: p.y, z: p.z, yaw: p.yaw, eye: p.eye || 1.6 });
+      } else {
+        for (const b of bodies.values()) if (b.goal && b.goal.alive !== false) out.push({ name: b.goal.name || 'Ally', x: b.x, y: b.y, z: b.z, yaw: b.yaw, eye: 1.6 });
+      }
+      return out;
     },
     peerMarks() {
       const out = [];
