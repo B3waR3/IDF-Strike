@@ -208,8 +208,13 @@ export function makeProp(id) {
     src.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
     const root = new THREE.Group();
     root.add(inner);
-    propTemplates[id] = { root, size: size.multiplyScalar(s) };
+    inner.updateMatrixWorld(true);
+    let seller = null;
+    inner.traverse((o) => { if (o.name === 'seller') seller = o; });
+    const sellerPos = seller ? seller.getWorldPosition(new THREE.Vector3()) : null;
+    if (seller) seller.removeFromParent();
+    propTemplates[id] = { root, size: size.multiplyScalar(s), seller: sellerPos };
   }
   const t = propTemplates[id];
-  return { root: t.root.clone(true), size: t.size.clone() };
+  return { root: t.root.clone(true), size: t.size.clone(), seller: t.seller ? t.seller.clone() : null };
 }

@@ -135,31 +135,30 @@ def mesh_from(name, bm, m):
     o.data.materials.append(m)
     return o
 
-# Steel frame. No bevels: edges stay sharp.
-for x, y in ((-1.2, -0.48), (1.2, -0.48), (-1.2, 0.55), (1.2, 0.55)):
-    cyl(f'post{x}{y}', (x, y, 1.08), 0.028, 2.16, rust, 8)
-box('railF', (0, 0.55, 2.14), (2.4, 0.03, 0.03), rust)
-box('railB', (0, -0.48, 2.14), (2.4, 0.03, 0.03), rust)
-box('railL', (-1.2, 0.03, 2.14), (0.03, 1.06, 0.03), rust)
-box('railR', (1.2, 0.03, 2.14), (0.03, 1.06, 0.03), rust)
+# Steel frame. No bevels: edges stay sharp. Tall enough that the sign clears a standing soldier.
+for x, y in ((-1.2, -0.62), (1.2, -0.62), (-1.2, 0.62), (1.2, 0.62)):
+    cyl(f'post{x}{y}', (x, y, 1.42), 0.028, 2.84, rust, 8)
+box('railF', (0, 0.62, 2.82), (2.4, 0.03, 0.03), rust)
+box('railB', (0, -0.62, 2.82), (2.4, 0.03, 0.03), rust)
+box('railL', (-1.2, 0.0, 2.82), (0.03, 1.27, 0.03), rust)
+box('railR', (1.2, 0.0, 2.82), (0.03, 1.27, 0.03), rust)
 
-# Deck and cabinet carcass, then separate doors so the seams read.
-box('deck', (0, 0.0, 0.04), (2.35, 1.05, 0.08), dark)
-box('carcass', (0, -0.02, 0.5), (2.2, 0.82, 0.84), wood)
+# Cabinet and counter stay on the street side, leaving a standing bay behind them.
+box('deck', (0, 0.02, 0.04), (2.4, 1.28, 0.08), dark)
+box('carcass', (0, 0.4, 0.48), (2.15, 0.36, 0.8), wood)
 for i, x in enumerate((-0.72, 0.0, 0.72)):
-    box(f'door{i}', (x, 0.4, 0.48), (0.62, 0.018, 0.7), paint)
-    cyl(f'handle{i}', (x + 0.22, 0.43, 0.48), 0.012, 0.16, metal, 8, (math.pi / 2, 0, 0))
+    box(f'door{i}', (x, 0.59, 0.46), (0.62, 0.018, 0.68), paint)
+    cyl(f'handle{i}', (x + 0.22, 0.62, 0.46), 0.012, 0.16, metal, 8, (math.pi / 2, 0, 0))
 
-# Counter: a worn metal sheet with a lip toward the customer.
-box('counter', (0, 0.06, 0.96), (2.32, 1.02, 0.025), metal)
-box('lip', (0, 0.55, 0.93), (2.28, 0.02, 0.06), metal)
+box('counter', (0, 0.42, 0.92), (2.28, 0.42, 0.028), metal)
+box('lip', (0, 0.62, 0.89), (2.24, 0.02, 0.055), metal)
 
-# Back and side panels, inset from the posts.
-box('back', (0, -0.44, 1.5), (2.28, 0.02, 1.05), wood)
+# Back wall sits behind the seller. Side walls frame the booth without crossing the bay.
+box('back', (0, -0.6, 1.85), (2.24, 0.02, 1.9), wood)
 for i, x in enumerate((-0.55, 0.55)):
-    box(f'backplank{i}', (x, -0.425, 1.5), (0.9, 0.012, 0.92), paint)
-box('sideL', (-1.16, 0.02, 1.45), (0.02, 0.9, 0.95), wood)
-box('sideR', (1.16, 0.02, 1.45), (0.02, 0.9, 0.95), wood)
+    box(f'backplank{i}', (x, -0.585, 1.85), (0.9, 0.012, 1.7), paint)
+box('sideL', (-1.16, 0.0, 1.7), (0.02, 1.2, 1.5), wood)
+box('sideR', (1.16, 0.0, 1.7), (0.02, 1.2, 1.5), wood)
 
 # Corrugated roof, sloping down toward the street.
 bm = bmesh.new()
@@ -168,11 +167,11 @@ grid = []
 for iy in range(ny + 1):
     row = []
     fy = iy / ny
-    y = -0.62 + fy * 1.55
+    y = -0.75 + fy * 1.7
     for ix in range(nx + 1):
         fx = ix / nx
         x = -1.32 + fx * 2.64
-        z = 2.2 - fy * 0.08 + 0.028 * math.sin(ix * math.pi * 2 * 7 / nx)
+        z = 2.78 - fy * 0.06 + 0.028 * math.sin(ix * math.pi * 2 * 7 / nx)
         row.append(bm.verts.new((x, y, z)))
     grid.append(row)
 for iy in range(ny):
@@ -188,13 +187,13 @@ grid = []
 for iy in range(ny + 1):
     row = []
     fy = iy / ny
-    y = 0.55 + fy * 0.55
+    y = 0.62 + fy * 0.55
     sag = math.sin(fy * math.pi) * 0.06
     for ix in range(nx + 1):
         fx = ix / nx
         x = -1.22 + fx * 2.44
         edge = math.sin(fx * math.pi)
-        z = 2.12 - fy * 0.22 - sag * edge
+        z = 2.72 - fy * 0.2 - sag * edge
         row.append(bm.verts.new((x, y, z)))
     grid.append(row)
 for iy in range(ny):
@@ -205,13 +204,13 @@ mesh_from('awning', bm, canvas)
 
 # Painted board, then raised letters. Text lies in XY; a +90 X rotation turns it toward
 # the street, and the 180 Z turn puts the first letter on the customer's left.
-box('signback', (0, 0.47, 1.72), (1.7, 0.016, 0.42), dark)
-bpy.ops.object.text_add(location=(0, 0.49, 1.72))
+box('signback', (0, 0.4, 2.45), (1.5, 0.016, 0.24), dark)
+bpy.ops.object.text_add(location=(0, 0.42, 2.45))
 letters = bpy.context.active_object
 letters.data.body = 'SHEKEM'
 letters.data.align_x = 'CENTER'
 letters.data.align_y = 'CENTER'
-letters.data.size = 0.16
+letters.data.size = 0.12
 letters.data.extrude = 0.008
 letters.data.space_character = 1.02
 letters.rotation_euler = (math.pi / 2, 0, math.pi)
@@ -220,24 +219,28 @@ bpy.context.view_layer.objects.active = letters
 bpy.ops.object.convert(target='MESH')
 
 def bottle(name, x, y, color, h):
-    base = 0.99
+    base = 0.95
     cyl(name + 'b', (x, y, base + h * 0.32), 0.034, h * 0.64, color, 12)
     cyl(name + 's', (x, y, base + h * 0.72), 0.022, h * 0.16, color, 10)
     cyl(name + 'n', (x, y, base + h * 0.9), 0.012, h * 0.22, color, 8)
     cyl(name + 'c', (x, y, base + h + 0.02), 0.014, 0.02, metal, 8)
 
-bottle('b0', -0.85, 0.18, juice, 0.22)
-bottle('b1', -0.72, 0.05, soda, 0.18)
-bottle('b2', -0.58, 0.2, juice, 0.2)
-bottle('b3', -0.46, 0.08, soda, 0.16)
+bottle('b0', -0.85, 0.32, juice, 0.22)
+bottle('b1', -0.72, 0.22, soda, 0.18)
+bottle('b2', -0.58, 0.34, juice, 0.2)
+bottle('b3', -0.46, 0.24, soda, 0.16)
 for i, x in enumerate((-0.22, -0.12, -0.02, 0.08)):
-    cyl(f'can{i}', (x, 0.1, 1.06), 0.024, 0.11, metal, 10)
-box('tray', (0.45, 0.12, 0.995), (0.42, 0.28, 0.012), metal)
-box('pack', (0.42, 0.1, 1.04), (0.22, 0.14, 0.06), cream)
-box('pack2', (0.52, 0.16, 1.1), (0.18, 0.12, 0.05), paint)
+    cyl(f'can{i}', (x, 0.28, 1.0), 0.024, 0.11, metal, 10)
+box('tray', (0.48, 0.3, 0.95), (0.42, 0.22, 0.012), metal)
+box('pack', (0.45, 0.28, 0.99), (0.22, 0.14, 0.06), cream)
+box('pack2', (0.55, 0.32, 1.05), (0.18, 0.12, 0.05), paint)
 # Crate on the ground beside the stall, toward the street.
 box('crate', (1.45, 0.35, 0.16), (0.32, 0.28, 0.32), wood)
 box('crate2', (1.48, 0.32, 0.46), (0.28, 0.24, 0.26), wood)
+# Feet mark for the seller. A tiny mesh so the exporter keeps the node; the game removes it.
+bpy.ops.mesh.primitive_cube_add(size=0.04, location=(0, -0.16, 0.2))
+mark = bpy.context.active_object
+mark.name = 'seller'
 
 bpy.ops.object.select_all(action='SELECT')
 bpy.ops.export_scene.gltf(
@@ -257,9 +260,9 @@ bg.inputs[1].default_value = 0.8
 bpy.ops.object.light_add(type='SUN', location=(2, 6, 8))
 bpy.context.active_object.data.energy = 4
 bpy.context.active_object.rotation_euler = (0.7, 0.2, 0.5)
-bpy.ops.object.camera_add(location=(1.15, 4.4, 1.65))
+bpy.ops.object.camera_add(location=(1.15, 4.6, 1.85))
 cam = bpy.context.active_object
-direction = mathutils.Vector((0, 0.05, 1.15)) - cam.location
+direction = mathutils.Vector((0, 0.05, 1.45)) - cam.location
 cam.rotation_euler = direction.to_track_quat('-Z', 'Y').to_euler()
 scene = bpy.context.scene
 scene.camera = cam
