@@ -21,12 +21,12 @@ jobs:
       - run: npm ci
       - name: Release version
         shell: pwsh
+        env:
+          RUN_NUMBER: ${{ github.run_number }}
         run: |
-          $parts = (Get-Content package.json -Raw | ConvertFrom-Json).version.Split('.')
-          if ($parts.Length -lt 3) { $parts = @('1', '0', '0') }
-          $parts[2] = [int]$parts[2] + ${{ github.run_number }}
-          "APP_VERSION=$($parts -join '.')" | Out-File -FilePath $env:GITHUB_ENV -Append
+          node -e "const fs=require('fs'); const p=JSON.parse(fs.readFileSync('package.json','utf8')); const parts=String(p.version).split('.'); while (parts.length<3) parts.push('0'); parts[2]=String(Number(parts[2])+Number(process.env.RUN_NUMBER)); p.version=parts.join('.'); fs.writeFileSync('package.json', JSON.stringify(p, null, 2)+'\n'); console.log('version', p.version);"
       - name: Build and publish
-        run: npx electron-builder --win --publish always -c.extraMetadata.version=$env:APP_VERSION
+        run: npx electron-builder --win --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: false
