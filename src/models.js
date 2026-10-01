@@ -34,6 +34,16 @@ export const GUNS = {
     grip: [0, -0.03, 0.21], fore: [0, -0.02, -0.15], muzzle: [0, 0.018, -0.545], sightY: 0.075, sightZ: 0.27, eject: 0.12,
     mag: { box: [[-0.04, -0.1, 0.12], [0.04, -0.035, 0.19]] },
   },
+  sniper: {
+    file: 'sniper', rotY: Math.PI, len: 1.22,
+    grip: [0, -0.045, 0.24], fore: [0, -0.02, -0.22], muzzle: [0, 0.04, -0.6], sightY: 0.1, sightZ: 0.18, eject: 0.14,
+    mag: { names: ['mag', 'mag_sniper_0'] },
+  },
+  g28: {
+    file: 'g28', rotY: Math.PI / 2, len: 1.08,
+    grip: [0, -0.04, 0.2], fore: [0, -0.015, -0.18], muzzle: [0, 0.045, -0.52], sightY: 0.11, sightZ: 0.16, eject: 0.1,
+    mag: { names: ['Mag_1', 'Object_6'] },
+  },
   rpg: {
     file: 'rpg', rotY: Math.PI / 2, len: 1.2,
     grip: [0, -0.06, -0.16], fore: [0, -0.04, -0.28], muzzle: [0, 0, -0.6], sightY: 0.07, eject: 0,
@@ -60,6 +70,7 @@ export const GUNS = {
 
 export const PROPS = {
   merkava: { file: 'merkava', rotY: 0, len: 9.04, ground: true },
+  shekem: { file: 'shekem', rotY: Math.PI, longest: 2.7, ground: true },
   pickup: { file: 'pickup', rotY: Math.PI, len: 5.3, ground: true },
   m67: { file: 'm67', rotY: 0, scale: 1, keep: /^m67_(base|spoon|striker|ring|safety_pin)_m/ },
 };
@@ -189,7 +200,8 @@ export function makeProp(id) {
     inner.updateMatrixWorld(true);
     const box = new THREE.Box3().setFromObject(inner, true);
     const size = box.getSize(new THREE.Vector3());
-    const s = cfg.scale ?? cfg.len / size.z;
+    const longest = Math.max(size.x, size.y, size.z);
+    const s = cfg.scale ?? (cfg.longest ? cfg.longest / longest : cfg.len / size.z);
     inner.scale.setScalar(s);
     const c = box.getCenter(new THREE.Vector3()).multiplyScalar(s);
     inner.position.set(-c.x, cfg.ground ? -box.min.y * s : -c.y, -c.z);

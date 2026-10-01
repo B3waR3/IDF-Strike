@@ -9,7 +9,7 @@ import { explosionFx } from './effects.js';
 export const NET_PORT = 27500;
 const POSE_DT = 1 / 20;
 const SNAP_DT = 1 / 15;
-const WEAPONS_OK = new Set(['tavor', 'm4', 'negev', 'm24', 'glock', 'jericho', 'karambit']);
+const WEAPONS_OK = new Set(['tavor', 'm4', 'negev', 'm24', 'sniper', 'g28', 'glock', 'jericho', 'karambit']);
 
 const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
 const lerpA = (a, b, k) => {

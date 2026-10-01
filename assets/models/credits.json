@@ -118,5 +118,29 @@
         "user":  "thronetools",
         "license":  "CC Attribution",
         "url":  "https://sketchfab.com/3d-models/glock-gun-3d-model-free-download-d1f6b5d6902d4a7fb735881d3ece250a"
+    },
+    {
+        "id":  "sniper",
+        "name":  "Sniper",
+        "author":  "bumstrum",
+        "user":  "bumstrum",
+        "license":  "CC Attribution",
+        "url":  "https://sketchfab.com/3d-models/sniper-cdefd833b4b5407ba32c53c9e7f50cae"
+    },
+    {
+        "id":  "g28",
+        "name":  "HK G28 Sniper Rifle",
+        "author":  "trolosqlfod",
+        "user":  "trolosqlfod",
+        "license":  "CC Attribution",
+        "url":  "https://sketchfab.com/3d-models/hk-g28-sniper-rifle-997840668e1e4c1384c7220563323085"
+    },
+    {
+        "id":  "shekem",
+        "name":  "Shekem canteen stall",
+        "author":  "Built for this game in Blender",
+        "user":  "",
+        "license":  "Original",
+        "url":  ""
     }
 ]

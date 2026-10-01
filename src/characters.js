@@ -5,7 +5,7 @@ import { models, makeGun } from './models.js';
 import { shareSkeletons } from './merge.js';
 import { LAYER_HITBOX } from './gfx.js';
 import { TEX } from './effects.js';
-import { ccBones, retargetClips, solveIK, armHinge, analyzeHand, orientHand, curlFingers } from './rig.js';
+import { ccBones, retargetClips, solveIK, analyzeHand, orientHand, curlFingers } from './rig.js';
 import { makeGrenadeMesh } from './grenade.js';
 import { NADE_TIMING, STAB_TIMING } from './viewmodels.js';
 import { MED_TIMING, BAND_R, makeBandage, newFrame, forearmFrame, wrapPhase, aroundArm, placeBandage, hideBandage } from './bandage.js';
@@ -487,7 +487,7 @@ export function createCharacter(kind, gunKind) {
 
 // ============================================================ player body (third person)
 // Normalised gun used for each player weapon id, and the viewmodel's pistol flag.
-const PLAYER_GUN = { tavor: 'tavor', m4: 'm4', negev: 'm240', m24: 'm24', glock: 'glock', jericho: 'jericho', karambit: 'karambit' };
+const PLAYER_GUN = { tavor: 'tavor', m4: 'm4', negev: 'm240', m24: 'm24', sniper: 'sniper', g28: 'g28', glock: 'glock', jericho: 'jericho', karambit: 'karambit' };
 const PISTOLS = new Set(['glock', 'jericho']);
 const KNIVES = new Set(['karambit']);
 
@@ -527,9 +527,6 @@ export function createPlayerBody() {
   const shoulderR = B.RightArm.getWorldPosition(W3());
   const footR = B.LeftFoot.getWorldPosition(W3()).y;
   const sole = measureSole(model, B.LeftFoot);
-  const hingeR = armHinge(B.RightArm, B.RightForeArm, B.RightHand);
-  const hingeL = armHinge(B.LeftArm, B.LeftForeArm, B.LeftHand);
-  const useHinge = Number.isFinite(hingeR.axisL.x) && hingeR.axisL.lengthSq() > 0.5;
   // Stock sits outside the right shoulder, not in the chest. +X would pull the gun through the ribs.
   const POCKET = W3(Math.min(shoulderR.x, -0.16) - 0.08, shoulderR.y - 0.2, Math.max(shoulderR.z, 0.05) + 0.16);
   const PISTOL_AT = W3(-0.05, shoulderR.y + 0.0, 0.44);
@@ -713,11 +710,11 @@ export function createPlayerBody() {
     fwdW.set(0, 0, -1).applyQuaternion(q);
     upW.set(0, 1, 0).applyQuaternion(q);
     rightW.set(1, 0, 0).applyQuaternion(q);
-    gun.root.localToWorld(gripW.copy(gun.grip)).addScaledVector(fwdW, -0.045);
+    gun.root.localToWorld(gripW.copy(gun.grip));
     root.localToWorld(handW.copy(b));
-    // Elbows stay outside the ribs: right elbow back and out, left elbow down beside the body.
-    root.localToWorld(poleR.set(-0.55, 1.02 + dy, -0.22));
-    root.localToWorld(poleL.set(0.48, 0.95 + dy, -0.08));
+    // Elbows out to the sides and slightly forward, not folded into the back.
+    root.localToWorld(poleR.set(-0.62, 1.12 + dy, 0.12));
+    root.localToWorld(poleL.set(0.5, 1.08 + dy, 0.1));
     solveIK(B.RightArm, B.RightForeArm, B.RightHand, gripW, poleR);
     solveIK(B.LeftArm, B.LeftForeArm, B.LeftHand, handW, poleL);
     orientHand(HR, fwdW, tmp.copy(rightW).negate());
@@ -820,6 +817,19 @@ export function createPlayerBody() {
         gunFrame.visible = false;
         nade.root.visible = false;
         hideBandage(kit);
+        // The idle clip hides the arms in the vest. Hang them at the sides so they read as arms.
+        root.updateMatrixWorld(true);
+        root.localToWorld(gripW.set(-0.32, 0.92 + drop_, 0.16));
+        root.localToWorld(handW.set(0.32, 0.92 + drop_, 0.16));
+        root.localToWorld(poleR.set(-0.62, 1.15 + drop_, 0.02));
+        root.localToWorld(poleL.set(0.62, 1.15 + drop_, 0.02));
+        solveIK(B.RightArm, B.RightForeArm, B.RightHand, gripW, poleR);
+        solveIK(B.LeftArm, B.LeftForeArm, B.LeftHand, handW, poleL);
+        root.getWorldQuaternion(q);
+        orientHand(HR, tmp.set(0, -0.8, 0.35).applyQuaternion(q), a.set(-0.4, 0.2, 0.6).applyQuaternion(q));
+        orientHand(HL, tmp.set(0, -0.8, 0.35).applyQuaternion(q), a.set(0.4, 0.2, 0.6).applyQuaternion(q));
+        curlFingers(HR, 0.45, 0.3);
+        curlFingers(HL, 0.45, 0.3);
         return;
       }
 
@@ -855,25 +865,21 @@ export function createPlayerBody() {
       const { gun } = cur;
       gun.root.localToWorld(gripW.copy(gun.grip));
       gun.root.localToWorld(foreW.copy(gun.fore));
-      root.localToWorld(poleR.set(-0.78, 1.15 + drop_, -0.2));
-      root.localToWorld(poleL.set(0.62, 1.02 + drop_, -0.05));
+      root.localToWorld(poleR.set(-0.58, 1.2 + drop_, 0.08));
+      root.localToWorld(poleL.set(0.48, 1.05 + drop_, 0.2));
       let attached = false;
       if (reloading) attached = leftTarget(st.reloadP, st.empty, handW);
       else if (cur.pistol) gun.root.localToWorld(handW.copy(gun.grip).add(local.set(-0.03, -0.012, 0)));
       else handW.copy(foreW);
-      root.worldToLocal(local.copy(gripW));
-      if (local.x > -0.14) local.x = -0.22;
-      if (local.z < 0.1) local.z = 0.18;
-      root.localToWorld(gripW.copy(local));
-      solveIK(B.RightArm, B.RightForeArm, B.RightHand, gripW, poleR, useHinge ? hingeR : null);
-      solveIK(B.LeftArm, B.LeftForeArm, B.LeftHand, handW, poleL, useHinge ? hingeL : null);
+      solveIK(B.RightArm, B.RightForeArm, B.RightHand, gripW, poleR);
+      solveIK(B.LeftArm, B.LeftForeArm, B.LeftHand, handW, poleL);
       gun.root.getWorldQuaternion(q);
       fwdW.set(0, 0, -1).applyQuaternion(q);
       upW.set(0, 1, 0).applyQuaternion(q);
       rightW.set(1, 0, 0).applyQuaternion(q);
       orientHand(HR, tmp.copy(fwdW).addScaledVector(upW, -0.35), a.copy(rightW).negate());
       if (cur.pistol && !reloading) orientHand(HL, tmp.copy(fwdW).multiplyScalar(0.7).addScaledVector(upW, -0.6).addScaledVector(rightW, 0.4), rightW);
-      else orientHand(HL, tmp.copy(fwdW).addScaledVector(rightW, 0.7), upW);
+      else orientHand(HL, fwdW, tmp.copy(upW).addScaledVector(rightW, -0.35));
       curlFingers(HR, 1.15, 0.5);
       curlFingers(HL, reloading ? 0.9 : 1.0, 0.5);
 

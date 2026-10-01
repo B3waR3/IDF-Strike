@@ -44,6 +44,20 @@ const WEAPONS = {
     reload: 3.4, reloadEmpty: 3.8, modes: ['BOLT'], adsFov: 14, adsTime: 0.3, tracerEvery: 0,
     optic: 'Leupold Mark 4 10× scope', sound: { cut: 2800, dur: 0.55, thump: 65, gain: 1.25 },
   },
+  sniper: {
+    name: 'Heavy Sniper', tag: 'SNIPER', caliber: '.338 Lapua · bolt-action', type: 'sniper', model: 'sniper',
+    mag: 5, reserveMags: 4, chamber: false, rpm: 32, damage: 280, headMult: 3, range: 950,
+    spread: 0.07, adsSpread: 0.0, bloomPerShot: 0, recoil: 0.06, scope: true,
+    reload: 3.6, reloadEmpty: 4.0, modes: ['BOLT'], adsFov: 10, adsTime: 0.34, tracerEvery: 0,
+    optic: 'High-power scope', sound: { cut: 2200, dur: 0.7, thump: 50, gain: 1.4 },
+  },
+  g28: {
+    name: 'HK G28', tag: 'G28', caliber: '7.62×51mm · semi-auto', type: 'sniper', model: 'g28',
+    mag: 20, reserveMags: 4, chamber: true, rpm: 260, damage: 210, headMult: 2.6, range: 750,
+    spread: 0.05, adsSpread: 0.001, bloomPerShot: 0.006, recoil: 0.038, scope: true,
+    reload: 2.8, reloadEmpty: 3.2, modes: ['SEMI'], adsFov: 12, adsTime: 0.28, tracerEvery: 1,
+    optic: 'Schmidt & Bender scope', sound: { cut: 2600, dur: 0.4, thump: 70, gain: 1.3 },
+  },
   glock: {
     name: 'Glock 17', tag: 'G17', caliber: '9×19mm Parabellum', type: 'pistol', model: 'glock',
     mag: 17, reserveMags: 4, chamber: true, rpm: 420, damage: 25, headMult: 2, range: 50,
@@ -1100,6 +1114,8 @@ const SHOP = [
   { id: 'm4', name: 'M4A1', detail: 'Carbine', price: 220, weapon: 'm4' },
   { id: 'negev', name: 'Negev', detail: 'IWI light machine gun', price: 340, weapon: 'negev' },
   { id: 'm24', name: 'M24 SWS', detail: '7.62 marksman rifle', price: 400, weapon: 'm24' },
+  { id: 'sniper', name: 'Heavy Sniper', detail: 'Bolt rifle · drops a militant in one shot', price: 2400, weapon: 'sniper' },
+  { id: 'g28', name: 'HK G28', detail: 'Semi-auto 7.62 · fast follow-up shots', price: 3200, weapon: 'g28' },
 ];
 const shopOpen = { on: false };
 let suppressPause = false;

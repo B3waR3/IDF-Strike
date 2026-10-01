@@ -7,7 +7,7 @@ import { shareSkeletons, ownMaterials } from './merge.js';
 import { makeGrenadeMesh } from './grenade.js';
 import { MED_TIMING, BAND_R, makeBandage, newFrame, forearmFrame, wrapPhase, aroundArm, placeBandage, hideBandage } from './bandage.js';
 
-const GUN_FOR = { tavor: 'tavor', m4: 'm4', negev: 'm240', m24: 'm24', glock: 'glock', jericho: 'jericho', karambit: 'karambit' };
+const GUN_FOR = { tavor: 'tavor', m4: 'm4', negev: 'm240', m24: 'm24', sniper: 'sniper', g28: 'g28', glock: 'glock', jericho: 'jericho', karambit: 'karambit' };
 // Camera-space placement. `eye` is how far behind the rear sight the eye sits; `hip` is the offset from ADS.
 // Hand poses are in the gun frame (metres, -Z = muzzle, +X = right): target point, finger direction, palm normal.
 // `charge` is where the support hand works the action on an empty reload, `pull` how far it travels.
@@ -26,6 +26,13 @@ export const LAYOUT = {
   m24: {
     eye: 0.06, hip: [0.13, -0.045, -0.06], L: { along: [0.55, 0.15, -0.8], palm: [0, 1, 0] },
     bolt: { p: [0.05, 0.015, 0.16], lift: [0.01, 0.035, 0], pull: [0, 0, 0.085] },
+  },
+  sniper: {
+    eye: 0.05, hip: [0.14, -0.05, -0.05], L: { along: [0.55, 0.15, -0.8], palm: [0, 1, 0] },
+    bolt: { p: [0.05, 0.02, 0.18], lift: [0.012, 0.04, 0], pull: [0, 0, 0.09] },
+  },
+  g28: {
+    eye: 0.07, hip: [0.13, -0.045, -0.06], L: { along: [0.4, 0.1, -0.85], palm: [0, 1, 0] },
   },
   glock: { eye: 0.56, hip: [0.1, -0.04, 0.02], pistol: true, reach: 0.12 },
   jericho: { eye: 0.56, hip: [0.1, -0.04, 0.02], pistol: true, reach: 0.12 },
@@ -339,7 +346,7 @@ export function buildViewModel(id, root) {
     : new THREE.Box3(new THREE.Vector3(-0.01, -0.02, -0.01), new THREE.Vector3(0.01, 0.02, 0.01));
   const magC = mb.getCenter(new THREE.Vector3()), magH = mb.max.y - mb.min.y;
   const muzzle = gun.muzzle.clone();
-  const flash = flashGroup(g, muzzle, L.knife ? 0 : L.pistol ? 0.6 : id === 'negev' || id === 'm24' ? 1.3 : 1);
+  const flash = flashGroup(g, muzzle, L.knife ? 0 : L.pistol ? 0.6 : id === 'negev' || id === 'm24' || id === 'sniper' || id === 'g28' ? 1.3 : 1);
   if (L.knife) flash.visible = false;
   gun.root.traverse((o) => { if (o.isMesh) { o.frustumCulled = false; o.castShadow = o.receiveShadow = false; } });
 
