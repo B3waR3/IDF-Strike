@@ -3,7 +3,7 @@
 //   npm start                  run from source
 //   npm start -- --windowed    start in a window instead of full screen
 //   npm run dist               build the Windows installer into dist/
-const { app, BrowserWindow, protocol, net, ipcMain } = require('electron');
+const { app, BrowserWindow, dialog, protocol, net, ipcMain } = require('electron');
 const { WebSocketServer, WebSocket } = require('ws');
 const os = require('node:os');
 const path = require('node:path');
@@ -154,6 +154,29 @@ app.on('second-instance', () => {
   win.focus();
 });
 
+// Installed copies ask GitHub for a newer release. Source runs (`npm start`) skip this.
+function setupUpdates() {
+  if (!app.isPackaged) return;
+  const { autoUpdater } = require('electron-updater');
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.on('update-downloaded', () => {
+    dialog.showMessageBox(win, {
+      type: 'info',
+      buttons: ['Restart now', 'Later'],
+      defaultId: 0,
+      cancelId: 1,
+      title: 'IDF Strike',
+      message: 'An update has been downloaded.',
+      detail: 'Restart the game to install it.',
+    }).then(({ response }) => {
+      if (response === 0) autoUpdater.quitAndInstall();
+    });
+  });
+  autoUpdater.on('error', (err) => console.error('update check failed:', err));
+  setTimeout(() => { autoUpdater.checkForUpdates().catch(() => {}); }, 4000);
+}
+
 app.whenReady().then(() => {
   protocol.handle('app', (req) => {
     const rel = decodeURIComponent(new URL(req.url).pathname);
@@ -162,6 +185,7 @@ app.whenReady().then(() => {
     return net.fetch(pathToFileURL(file).toString());
   });
   createWindow();
+  setupUpdates();
 });
 
 app.on('window-all-closed', () => app.quit());

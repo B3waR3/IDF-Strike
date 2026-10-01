@@ -1,0 +1,32 @@
+# Each push to master builds the Windows installer and publishes it as a GitHub Release.
+# The version's patch number is the package version plus this workflow's run number, so every
+# push is newer than the last release and installed copies can see the update.
+name: Release
+on:
+  push:
+    branches: [master]
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Release version
+        shell: pwsh
+        run: |
+          $parts = (Get-Content package.json -Raw | ConvertFrom-Json).version.Split('.')
+          if ($parts.Length -lt 3) { $parts = @('1', '0', '0') }
+          $parts[2] = [int]$parts[2] + ${{ github.run_number }}
+          "APP_VERSION=$($parts -join '.')" | Out-File -FilePath $env:GITHUB_ENV -Append
+      - name: Build and publish
+        run: npx electron-builder --win --publish always -c.extraMetadata.version=$env:APP_VERSION
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
