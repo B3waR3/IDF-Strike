@@ -1,5 +1,8 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
+contextBridge.exposeInMainWorld('idfApp', {
+  setDisplay: (mode) => ipcRenderer.invoke('set-display', mode),
+});
 contextBridge.exposeInMainWorld('idfNet', {
   host: () => ipcRenderer.invoke('net-host'),
   connect: (url) => ipcRenderer.invoke('net-connect', url),

@@ -3,7 +3,7 @@
 //   npm start                  run from source
 //   npm start -- --windowed    start in a window instead of full screen
 //   npm run dist               build the Windows installer into dist/
-const { app, BrowserWindow, dialog, protocol, net, ipcMain } = require('electron');
+const { app, BrowserWindow, dialog, protocol, net, ipcMain, screen } = require('electron');
 const { WebSocketServer, WebSocket } = require('ws');
 const os = require('node:os');
 const path = require('node:path');
@@ -59,6 +59,25 @@ function createWindow() {
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   win.loadURL('app://game/index.html');
 }
+
+ipcMain.handle('set-display', (_event, mode) => {
+  if (!win || win.isDestroyed()) return;
+  if (mode === 'fullscreen') {
+    win.setFullScreen(true);
+    return;
+  }
+  win.setFullScreen(false);
+  if (mode === 'borderless') {
+    const area = screen.getPrimaryDisplay().bounds;
+    win.setBounds(area);
+    return;
+  }
+  const parts = String(mode).split('x').map(Number);
+  if (parts.length === 2 && parts.every((n) => n > 0)) {
+    win.setSize(parts[0], parts[1]);
+    win.center();
+  }
+});
 
 const NET_PORT = 27500;
 const MAX_JOINERS = 3;

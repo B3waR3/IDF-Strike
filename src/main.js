@@ -142,27 +142,56 @@ const canvas = renderer.domElement;
 const scene = new THREE.Scene();
 
 const BASE_FOV = 75;
+const DISPLAYS = [
+  ['fullscreen', 'FULLSCREEN'],
+  ['borderless', 'BORDERLESS'],
+  ['1280x720', '1280×720'],
+  ['1366x768', '1366×768'],
+  ['1600x900', '1600×900'],
+  ['1920x1080', '1920×1080'],
+  ['2560x1440', '2560×1440'],
+  ['3840x2160', '3840×2160'],
+];
 const settings = {
   volume: Number(localStorage.getItem('idf-volume') ?? 75),
   sens: Number(localStorage.getItem('idf-sens') ?? 100),
   fov: Number(localStorage.getItem('idf-fov') ?? BASE_FOV),
+  ui: Number(localStorage.getItem('idf-ui') ?? 100),
+  display: localStorage.getItem('idf-display') || 'fullscreen',
 };
 function lookFov() { return clamp(settings.fov, 60, 100); }
+function applyFit() {
+  const fit = Math.min(innerWidth / 1920, innerHeight / 1080) * (clamp(settings.ui, 70, 140) / 100);
+  document.documentElement.style.setProperty('--fit', String(Math.max(0.45, fit)));
+}
 function applySettings() {
   settings.volume = clamp(settings.volume, 0, 100);
   settings.sens = clamp(settings.sens, 20, 250);
   settings.fov = lookFov();
+  settings.ui = clamp(settings.ui, 70, 140);
   localStorage.setItem('idf-volume', String(settings.volume));
   localStorage.setItem('idf-sens', String(settings.sens));
   localStorage.setItem('idf-fov', String(settings.fov));
+  localStorage.setItem('idf-ui', String(settings.ui));
+  localStorage.setItem('idf-display', settings.display);
   SFX.setVolume(settings.volume / 100);
   document.querySelectorAll('.set-vol').forEach((el) => { el.value = settings.volume; });
   document.querySelectorAll('.set-sens').forEach((el) => { el.value = settings.sens; });
   document.querySelectorAll('.set-fov').forEach((el) => { el.value = settings.fov; });
+  document.querySelectorAll('.set-ui').forEach((el) => { el.value = settings.ui; });
   document.querySelectorAll('.set-vol-n').forEach((el) => { el.textContent = Math.round(settings.volume); });
   document.querySelectorAll('.set-sens-n').forEach((el) => { el.textContent = (settings.sens / 100).toFixed(2); });
   document.querySelectorAll('.set-fov-n').forEach((el) => { el.textContent = Math.round(settings.fov); });
+  document.querySelectorAll('.set-ui-n').forEach((el) => { el.textContent = Math.round(settings.ui) + '%'; });
+  document.querySelectorAll('#display-modes button').forEach((b) => b.classList.toggle('active', b.dataset.mode === settings.display));
+  applyFit();
 }
+async function setDisplay(mode) {
+  settings.display = mode;
+  applySettings();
+  if (window.idfApp) await window.idfApp.setDisplay(mode);
+}
+applyFit();
 const camera = new THREE.PerspectiveCamera(BASE_FOV, innerWidth / innerHeight, 0.05, 1500);
 camera.rotation.order = 'YXZ';
 camera.layers.enable(LAYER_FX);
@@ -218,6 +247,7 @@ addEventListener('resize', () => {
   camera.updateProjectionMatrix();
   vmCamera.updateProjectionMatrix();
   if (pipe) pipe.resize();
+  applyFit();
 });
 
 // Keep the shadow frustum centred on the player, snapped to shadow-map texels to avoid shimmering.
@@ -1371,9 +1401,29 @@ function drawMinimap() {
 // ============================================================
 //  INPUT
 // ============================================================
+let settingsFrom = null;
+function openSettings(from) {
+  settingsFrom = from;
+  $('settings').classList.remove('hidden');
+  if (from === 'pause') $('pause').classList.add('hidden');
+  if (from === 'menu') $('menu').classList.add('hidden');
+  applySettings();
+}
+function closeSettings(back) {
+  $('settings').classList.add('hidden');
+  const from = settingsFrom;
+  settingsFrom = null;
+  if (from === 'pause' && back) $('pause').classList.remove('hidden');
+  else if (from === 'pause') resumeGame();
+  else if (S.state !== 'playing') $('menu').classList.remove('hidden');
+}
 document.addEventListener('keydown', (e) => {
   keys[e.code] = true;
-  if (e.code === 'Escape' && shopOpen.on) { closeShop(); e.preventDefault(); return; }
+  if (e.code === 'Escape') {
+    if (shopOpen.on) { closeShop(); e.preventDefault(); return; }
+    if (!$('settings').classList.contains('hidden')) { closeSettings(false); e.preventDefault(); return; }
+    if (S.state === 'paused') { resumeGame(); e.preventDefault(); return; }
+  }
   if (S.state !== 'playing' || shopOpen.on) return;
   switch (e.code) {
     case 'KeyR': startReload(); break;
@@ -2198,13 +2248,24 @@ function buildMenu() {
     catch { $('net-status').textContent = 'Could not reach that host.'; }
   };
   $('resume-btn').onclick = resumeGame;
+  $('pause-settings-btn').onclick = () => openSettings('pause');
+  $('settings-btn').onclick = () => openSettings('menu');
+  $('settings-back').onclick = () => closeSettings(true);
   $('shop-close').onclick = closeShop;
   $('quit-btn').onclick = toMenu;
   $('redeploy-btn').onclick = toMenu;
   $('credits-btn').onclick = showCredits;
   $('credits-close').onclick = () => $('credits').classList.add('hidden');
-  const tpl = $('settings-tpl');
-  for (const id of ['settings-menu', 'settings-pause']) $(id).appendChild(tpl.content.cloneNode(true));
+  $('settings-controls').appendChild($('settings-tpl').content.cloneNode(true));
+  const modes = $('display-modes');
+  for (const [id, label] of DISPLAYS) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.dataset.mode = id;
+    b.textContent = label;
+    b.onclick = () => setDisplay(id);
+    modes.appendChild(b);
+  }
   const bindSet = (sel, key) => {
     document.querySelectorAll(sel).forEach((el) => el.addEventListener('input', () => {
       settings[key] = Number(el.value);
@@ -2214,7 +2275,9 @@ function buildMenu() {
   bindSet('.set-vol', 'volume');
   bindSet('.set-sens', 'sens');
   bindSet('.set-fov', 'fov');
+  bindSet('.set-ui', 'ui');
   applySettings();
+  if (window.idfApp && settings.display) setDisplay(settings.display);
   // Only the desktop app can close its own window.
   if (navigator.userAgent.includes('Electron')) {
     $('exit-btn').classList.remove('hidden');
@@ -2334,9 +2397,9 @@ async function boot() {
   scene.add(body.root);
   if (world.sellerPos) {
     seller = createPlayerBody();
-    seller.setWeapon('tavor');
+    seller.setWeapon(null);
     seller.root.position.copy(world.sellerPos);
-    seller.root.rotation.y = world.sellerFace || Math.PI;
+    seller.root.rotation.y = world.sellerFace ?? Math.PI;
     seller.root.userData.god = true;
     scene.add(seller.root);
   }

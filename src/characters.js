@@ -5,7 +5,7 @@ import { models, makeGun } from './models.js';
 import { shareSkeletons } from './merge.js';
 import { LAYER_HITBOX } from './gfx.js';
 import { TEX } from './effects.js';
-import { ccBones, retargetClips, solveIK, analyzeHand, orientHand, curlFingers } from './rig.js';
+import { ccBones, retargetClips, solveIK, armHinge, analyzeHand, orientHand, curlFingers } from './rig.js';
 import { makeGrenadeMesh } from './grenade.js';
 import { NADE_TIMING, STAB_TIMING } from './viewmodels.js';
 import { MED_TIMING, BAND_R, makeBandage, newFrame, forearmFrame, wrapPhase, aroundArm, placeBandage, hideBandage } from './bandage.js';
@@ -527,8 +527,11 @@ export function createPlayerBody() {
   const shoulderR = B.RightArm.getWorldPosition(W3());
   const footR = B.LeftFoot.getWorldPosition(W3()).y;
   const sole = measureSole(model, B.LeftFoot);
+  const hingeR = armHinge(B.RightArm, B.RightForeArm, B.RightHand);
+  const hingeL = armHinge(B.LeftArm, B.LeftForeArm, B.LeftHand);
+  const useHinge = Number.isFinite(hingeR.axisL.x) && hingeR.axisL.lengthSq() > 0.5;
   // Stock sits outside the right shoulder, not in the chest. +X would pull the gun through the ribs.
-  const POCKET = W3(shoulderR.x - 0.06, shoulderR.y - 0.18, shoulderR.z + 0.2);
+  const POCKET = W3(Math.min(shoulderR.x, -0.16) - 0.08, shoulderR.y - 0.2, Math.max(shoulderR.z, 0.05) + 0.16);
   const PISTOL_AT = W3(-0.05, shoulderR.y + 0.0, 0.44);
   const POUCH = W3(0.1, footR + 0.9, 0.16);
 
@@ -544,6 +547,12 @@ export function createPlayerBody() {
   const cache = {};
   let cur = null;
   function setWeapon(id) {
+    if (!id) {
+      if (cur?.gun) gunFrame.remove(cur.gun.root);
+      cur = { id: '', unarmed: true, pistol: false, knife: false };
+      gunFrame.visible = false;
+      return;
+    }
     if (cur && cur.id === id) return;
     if (cur?.gun) gunFrame.remove(cur.gun.root);
     if (!cache[id]) {
@@ -807,6 +816,12 @@ export function createPlayerBody() {
       plant(model, proneK > 0.35 ? [...feet, [B.Hips, 0.1], [B.Spine2, 0.11], [B.Head, 0.13]] : feet, root.position.y);
       if (proneK > 0.8) model.position.y += 0.03;
       const drop_ = model.position.y;
+      if (cur.unarmed) {
+        gunFrame.visible = false;
+        nade.root.visible = false;
+        hideBandage(kit);
+        return;
+      }
 
       // Upper body follows the aim; sprinting and weapon swaps lower the gun.
       lower += ((st.sprint || st.switchK > 0 ? 1 : 0) - lower) * Math.min(1, dt * 8);
@@ -840,14 +855,18 @@ export function createPlayerBody() {
       const { gun } = cur;
       gun.root.localToWorld(gripW.copy(gun.grip));
       gun.root.localToWorld(foreW.copy(gun.fore));
-      root.localToWorld(poleR.set(shoulderR.x - 0.32, shoulderR.y - 0.38 + drop_, -0.18));
-      root.localToWorld(poleL.set(0.42, shoulderR.y - 0.5 + drop_, 0.08));
+      root.localToWorld(poleR.set(-0.78, 1.15 + drop_, -0.2));
+      root.localToWorld(poleL.set(0.62, 1.02 + drop_, -0.05));
       let attached = false;
       if (reloading) attached = leftTarget(st.reloadP, st.empty, handW);
       else if (cur.pistol) gun.root.localToWorld(handW.copy(gun.grip).add(local.set(-0.03, -0.012, 0)));
       else handW.copy(foreW);
-      solveIK(B.RightArm, B.RightForeArm, B.RightHand, gripW, poleR);
-      solveIK(B.LeftArm, B.LeftForeArm, B.LeftHand, handW, poleL);
+      root.worldToLocal(local.copy(gripW));
+      if (local.x > -0.14) local.x = -0.22;
+      if (local.z < 0.1) local.z = 0.18;
+      root.localToWorld(gripW.copy(local));
+      solveIK(B.RightArm, B.RightForeArm, B.RightHand, gripW, poleR, useHinge ? hingeR : null);
+      solveIK(B.LeftArm, B.LeftForeArm, B.LeftHand, handW, poleL, useHinge ? hingeL : null);
       gun.root.getWorldQuaternion(q);
       fwdW.set(0, 0, -1).applyQuaternion(q);
       upW.set(0, 1, 0).applyQuaternion(q);

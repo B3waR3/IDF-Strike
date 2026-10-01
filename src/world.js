@@ -723,15 +723,15 @@ function shekem(scene, x, z) {
   sign.position.set(0, 1.85, 1.05);
   g.add(sign);
   g.position.set(x, 0, z);
-  // Front of the stall faces the fight, so the sign is readable on the walk back to the Merkava.
-  g.rotation.y = Math.PI;
+  // The Merkava and the spawn are up the street (+Z). The counter faces that way.
+  g.rotation.y = 0;
   scene.add(g);
   colliderBox(x, z, 2.5, 0.85, 0, 1.08, 'wood', 'c');
-  world.shekemPos = new THREE.Vector3(x, 0, z - 1.75);
+  world.shekemPos = new THREE.Vector3(x, 0, z + 1.7);
   world.resupplyPos = world.shekemPos;
-  // Behind the counter, facing the customers.
-  world.sellerPos = new THREE.Vector3(x, 0, z + 0.95);
-  world.sellerFace = Math.PI;
+  // Seller stands on the far side of the counter, facing the customers.
+  world.sellerPos = new THREE.Vector3(x, 0, z - 0.95);
+  world.sellerFace = 0;
 }
 function merkava(scene, x, z) {
   const { root } = makeProp('merkava');
