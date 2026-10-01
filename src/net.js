@@ -1,7 +1,8 @@
 // Co-op for up to three friends, with no accounts. The host's game is the mission: it runs the enemies,
 // waves and damage. Everyone else sends where they are and what they fired, and draws the host's world.
-// Friends on the same network use the host's address directly. Friends elsewhere join the same way after
-// Tailscale or ZeroTier has put the PCs on one private network.
+// Pressing HOST attaches to a console server if one is listening on this PC (npm run server). Otherwise
+// the game listens itself. Friends on the same network use the address it prints. From another house,
+// forward port 27500, or use Tailscale / ZeroTier and the address that gives the host.
 import * as THREE from 'three';
 import { createPlayerBody, createCharacter } from './characters.js';
 import { explosionFx } from './effects.js';
@@ -229,6 +230,32 @@ export function createNet(hooks) {
     send({ t: 'notice', text });
   }
 
+  function runCommand(line) {
+    const bits = String(line || '').trim().split(/\s+/);
+    const cmd = (bits[0] || '').toLowerCase();
+    const arg = bits.slice(1).join(' ');
+    if (cmd === 'players') {
+      const rows = [...peers.values()].map((p) => `#${p.id}  ${p.name}  ${p.alive ? 'up' : 'down'}`);
+      return rows.length ? rows.join('\n') : 'No one else has joined.';
+    }
+    if (cmd === 'kick') {
+      const name = arg.toLowerCase();
+      if (!name) return 'Usage: kick <name>';
+      for (const p of peers.values()) {
+        if (p.name.toLowerCase() === name) { forgetPeer(p.id); refreshStatus(); return `Kicked ${p.name}.`; }
+      }
+      return `No player named ${arg}.`;
+    }
+    if (cmd === 'say') {
+      if (!arg) return 'Usage: say <text>';
+      if (hooks.notice) hooks.notice(arg);
+      send({ t: 'notice', text: arg });
+      return 'Sent.';
+    }
+    const answer = hooks.command ? hooks.command(line) : null;
+    return answer || 'Unknown command. Type help.';
+  }
+
   function refreshStatus() {
     if (role !== 'host') return;
     const n = [...peers.values()].filter((p) => p.name).length;
@@ -390,6 +417,11 @@ export function createNet(hooks) {
     if (!m || typeof m !== 'object') return;
     if (role === 'host') {
       if (m.t === 'leave') { forgetPeer(packet.from); refreshStatus(); return; }
+      if (m.t === 'server-down') { status('The console server stopped.'); return; }
+      if (m.t === 'cmd') {
+        send({ t: 'cmd-reply', text: runCommand(m.line) }, 'server');
+        return;
+      }
       onClientMessage(packet.from, m);
       return;
     }
@@ -451,6 +483,16 @@ export function createNet(hooks) {
     async host(name) {
       if (!bridge) return;
       myName = String(name || 'Soldier').slice(0, 16) || 'Soldier';
+      if (bridge.mission) {
+        const attached = await bridge.mission('ws://127.0.0.1:' + NET_PORT);
+        if (attached) {
+          role = 'host';
+          myId = 0;
+          window.__netWhere = attached.ips || [];
+          refreshStatus();
+          return;
+        }
+      }
       const info = await bridge.host();
       role = 'host';
       myId = 0;
@@ -545,6 +587,7 @@ export function createNet(hooks) {
     off = bridge.onMessage((packet) => {
       const m = packet.data;
       if (role === 'host' && m && m.t === 'pose') { poses.set(packet.from, m); return; }
+      if (role === 'host' && m && (m.t === 'cmd' || m.t === 'server-down')) { raw(packet); return; }
       if (role === 'host' && m && m.t !== 'hello' && m.t !== 'ready' && m.t !== 'leave') { inbox.push({ id: packet.from, m }); return; }
       raw(packet);
     });

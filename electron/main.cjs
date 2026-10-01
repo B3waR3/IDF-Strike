@@ -83,6 +83,7 @@ const NET_PORT = 27500;
 const MAX_JOINERS = 3;
 let wss = null;
 let clientSock = null;
+let missionSock = null;
 const sockets = new Map();
 let nextPeer = 1;
 
@@ -101,6 +102,7 @@ function stopNet() {
   sockets.clear();
   if (wss) { wss.close(); wss = null; }
   if (clientSock) { clientSock.close(); clientSock = null; }
+  if (missionSock) { missionSock.close(); missionSock = null; }
   nextPeer = 1;
 }
 
@@ -137,6 +139,42 @@ ipcMain.handle('net-host', () => new Promise((resolve, reject) => {
   });
 }));
 
+ipcMain.handle('net-mission', (_event, url) => new Promise((resolve) => {
+  stopNet();
+  const sock = new WebSocket(url);
+  let settled = false;
+  let timer;
+  const finish = (value) => {
+    if (settled) return;
+    settled = true;
+    clearTimeout(timer);
+    resolve(value);
+  };
+  timer = setTimeout(() => { sock.close(); finish(null); }, 700);
+  sock.on('error', () => { sock.close(); finish(null); });
+  sock.on('open', () => sock.send(JSON.stringify({ t: 'mission' })));
+  sock.on('message', (buf) => {
+    if (buf.length > 500000) return;
+    let data;
+    try { data = JSON.parse(buf.toString()); } catch { return; }
+    if (!settled) {
+      if (data && data.t === 'mission-ok') {
+        missionSock = sock;
+        finish({ ips: data.ips || [], port: data.port });
+      }
+      return;
+    }
+    if (data && data.data && Object.prototype.hasOwnProperty.call(data, 'from')) toGame(data);
+  });
+  sock.on('close', () => {
+    if (missionSock === sock) {
+      missionSock = null;
+      toGame({ from: 0, data: { t: 'server-down' } });
+    }
+    finish(null);
+  });
+}));
+
 ipcMain.handle('net-connect', (_event, url) => new Promise((resolve, reject) => {
   stopNet();
   const sock = new WebSocket(url);
@@ -156,6 +194,10 @@ ipcMain.handle('net-connect', (_event, url) => new Promise((resolve, reject) => 
 }));
 
 ipcMain.on('net-send', (_event, payload) => {
+  if (missionSock && missionSock.readyState === WebSocket.OPEN) {
+    missionSock.send(JSON.stringify(payload));
+    return;
+  }
   const raw = JSON.stringify(payload.data);
   if (wss) {
     for (const [sock, id] of sockets) {

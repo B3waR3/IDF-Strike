@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld('idfApp', {
 });
 contextBridge.exposeInMainWorld('idfNet', {
   host: () => ipcRenderer.invoke('net-host'),
+  mission: (url) => ipcRenderer.invoke('net-mission', url),
   connect: (url) => ipcRenderer.invoke('net-connect', url),
   stop: () => ipcRenderer.invoke('net-stop'),
   send: (payload) => ipcRenderer.send('net-send', payload),

@@ -293,7 +293,7 @@ const player = {
   kills: 0, headshots: 0, score: 0, shots: 0, hits: 0,
 };
 const S = {
-  state: 'loading', wave: 0, toSpawn: 0, spawnT: 0, intermission: 0, alive: 0,
+  state: 'loading', wave: 0, toSpawn: 0, spawnT: 0, intermission: 0, alive: 0, god: false,
   reloading: false, reloadT: 0, reloadDur: 0, switchT: 0, ifakT: 0, fireCD: 0, boltT: 0,
   adsT: 0, bloom: 0, kick: 0, nadeCD: 0, resupplyCD: 0, bobT: 0, shake: 0, sprintT: 0,
   breath: 4, swayT: 0, flashT: 0, hurtT: 0, flowT: 0, time: 0, msgT: 0, triggerFresh: false,
@@ -348,22 +348,19 @@ function pickEnemyType() {
   return 'hamas';
 }
 
-function spawnEnemy() {
-  const typeId = pickEnemyType();
+function spawnEnemyOf(typeId, pos, emerge) {
   const t = ENEMY_TYPES[typeId];
-  let cand = shafts.filter((s) => s.distanceTo(player.pos) > 45);
-  if (!cand.length) cand = shafts.slice().sort((a, b) => b.distanceTo(player.pos) - a.distanceTo(player.pos)).slice(0, 2);
-  const s = cand[randInt(0, cand.length - 1)];
+  if (!t) return null;
   const ch = createCharacter(typeId, t.gun);
   const e = {
     t, typeId, nid: enemySeq++, ch, hp: t.hp * (1 + Math.max(0, S.wave - 1) * 0.08),
-    pos: V(s.x + rand(-0.3, 0.3), s.y, s.z + rand(-0.3, 0.3)),
-    rot: rand(0, Math.PI * 2), emerge: 1.4, dead: false, deathT: 0, removeT: 12, fallDir: 1,
+    pos: pos.clone(),
+    rot: rand(0, Math.PI * 2), emerge, dead: false, deathT: 0, removeT: 12, fallDir: 1,
     losT: rand(0, 0.3), vis: false, seen: false, reactT: 0, fireT: 0, burstLeft: 0,
     aimT: 0, strafeDir: 0, strafeT: 0, flinch: 0, moving: false, speed: 0, glint: null,
   };
   ch.root.rotation.order = 'YXZ';
-  ch.root.position.set(e.pos.x, s.y - 1.9, e.pos.z);
+  ch.root.position.set(e.pos.x, e.pos.y - (emerge > 0 ? 1.9 : 0), e.pos.z);
   ch.root.rotation.y = e.rot;
   for (const m of ch.hit) m.userData.enemy = e;
   if (t.sniper) {
@@ -379,6 +376,14 @@ function spawnEnemy() {
   enemies.push(e);
   S.alive++;
   rebuildHitList();
+  return e;
+}
+function spawnEnemy() {
+  const typeId = pickEnemyType();
+  let cand = shafts.filter((s) => s.distanceTo(player.pos) > 45);
+  if (!cand.length) cand = shafts.slice().sort((a, b) => b.distanceTo(player.pos) - a.distanceTo(player.pos)).slice(0, 2);
+  const s = cand[randInt(0, cand.length - 1)];
+  spawnEnemyOf(typeId, V(s.x + rand(-0.3, 0.3), s.y, s.z + rand(-0.3, 0.3)), 1.4);
 }
 function rebuildHitList() {
   enemyHitMeshes = [];
@@ -1207,7 +1212,7 @@ function buyItem(item) {
 }
 
 function damagePlayer(amount, fromPos, explosive) {
-  if (!playerInFight()) return;
+  if (S.god || !playerInFight()) return;
   let a = amount;
   if (player.armor > 0) {
     const absorb = a * (explosive ? 0.45 : 0.65);
@@ -1644,6 +1649,70 @@ function startWave() {
   S.toSpawn = 5 + S.wave * 3;
   S.spawnT = 1;
   flashMsg(`WAVE ${S.wave}\n<small>${S.toSpawn} militants inbound${S.wave === 2 ? ' — RPG gunners spotted' : S.wave === 3 ? ' — Watch for sniper glint' : ''}</small>`, 3);
+}
+function consoleCommand(line) {
+  const bits = String(line || '').trim().split(/\s+/);
+  const cmd = (bits[0] || '').toLowerCase();
+  const arg = bits.slice(1).join(' ');
+  const live = S.state === 'playing' || S.state === 'paused' || S.state === 'dead';
+  if (cmd === 'status') {
+    return [
+      `state ${S.state}`,
+      `wave ${S.wave}  hostiles ${S.alive + S.toSpawn}`,
+      `points ${player.score}`,
+      `hp ${Math.ceil(player.hp)}  armor ${Math.ceil(player.armor)}`,
+      `god ${S.god ? 'on' : 'off'}`,
+    ].join('\n');
+  }
+  if (!live) return 'Deploy into a mission first.';
+  if (cmd === 'wave') {
+    const n = Math.round(Number(arg));
+    if (!Number.isFinite(n) || n < 1 || n > 50) return 'Usage: wave <1-50>';
+    S.intermission = 0;
+    S.wave = n - 1;
+    startWave();
+    return `Wave ${S.wave} started, ${S.toSpawn} hostiles.`;
+  }
+  if (cmd === 'points') {
+    const add = arg.startsWith('+') || arg.startsWith('-');
+    const n = Math.round(Number(arg));
+    if (!Number.isFinite(n)) return 'Usage: points <n>   or   points +<n>';
+    player.score = Math.max(0, add ? player.score + n : n);
+    return `Points ${player.score}.`;
+  }
+  if (cmd === 'god') {
+    S.god = !S.god;
+    return `God ${S.god ? 'on' : 'off'}.`;
+  }
+  if (cmd === 'hp' || cmd === 'armor') {
+    const n = Math.round(Number(arg));
+    if (!Number.isFinite(n) || n < 0 || n > 100) return `Usage: ${cmd} <0-100>`;
+    if (cmd === 'hp') player.hp = n;
+    else { player.armorMax = Math.max(player.armorMax, n); player.armor = n; }
+    if (cmd === 'hp' && n > 0 && S.state === 'dead') netRevive();
+    return `${cmd} ${n}.`;
+  }
+  if (cmd === 'spawn') {
+    const kinds = { hamas: 'hamas', militant: 'hamas', pij: 'pij', rpg: 'rpg', sniper: 'sniper' };
+    const typeId = kinds[(bits[1] || '').toLowerCase()];
+    const count = Math.max(1, Math.min(8, Math.round(Number(bits[2])) || 1));
+    if (!typeId) return 'Usage: spawn <hamas|pij|rpg|sniper> [count]';
+    const fx = -Math.sin(player.yaw), fz = -Math.cos(player.yaw);
+    const rx = -fz, rz = fx;
+    for (let i = 0; i < count; i++) {
+      const side = (i - (count - 1) / 2) * 1.4;
+      spawnEnemyOf(typeId, V(player.pos.x + fx * 12 + rx * side, player.pos.y, player.pos.z + fz * 12 + rz * side), 0);
+    }
+    return `Spawned ${count} ${typeId}.`;
+  }
+  if (cmd === 'clear') {
+    for (const e of enemies.slice()) removeEnemy(e);
+    S.alive = 0;
+    S.toSpawn = 0;
+    rebuildHitList();
+    return 'Hostiles cleared.';
+  }
+  return null;
 }
 function updateWaves(dt) {
   if (S.intermission > 0) {
@@ -2395,6 +2464,7 @@ async function boot() {
     },
     disconnected() { if (S.state !== 'menu') toMenu(); },
     backToMenu() { if (S.state !== 'menu') toMenu(); },
+    command: consoleCommand,
   });
   buildMenu();
   applyQuality(qualityId);
