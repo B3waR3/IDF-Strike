@@ -50,6 +50,7 @@ export function createNet(hooks) {
   const props = new Map();
   const poses = new Map();
   const inbox = [];
+  const targetRecs = new Map();
   let role = null;
   let myId = 0;
   let myName = 'Soldier';
@@ -108,13 +109,34 @@ export function createNet(hooks) {
   }
 
   function targets() {
+    // Same object every frame for each friend. A fresh object each call made enemies
+    // restart their reaction forever and only ever finish a burst at the host.
+    const live = new Set();
     const out = [];
     for (const p of peers.values()) {
       if (!p.alive) continue;
-      out.push({
-        net: true, netId: p.id, pos: V(p.x, p.y, p.z), vel: V(p.vx, 0, p.vz),
-        eye: p.eye, alive: true, crouch: p.crouch, prone: p.prone, sprinting: p.sprint,
-      });
+      live.add(p.id);
+      let rec = targetRecs.get(p.id);
+      if (!rec) {
+        rec = {
+          net: true, netId: p.id, pos: V(), vel: V(),
+          eye: p.eye || 1.65, alive: true, crouch: false, prone: false, sprinting: false,
+        };
+        targetRecs.set(p.id, rec);
+      }
+      rec.pos.set(p.x, p.y, p.z);
+      rec.vel.set(p.vx, 0, p.vz);
+      rec.eye = p.eye || 1.65;
+      rec.alive = true;
+      rec.crouch = !!p.crouch;
+      rec.prone = !!p.prone;
+      rec.sprinting = !!p.sprint;
+      out.push(rec);
+    }
+    for (const id of [...targetRecs.keys()]) {
+      if (live.has(id)) continue;
+      targetRecs.get(id).alive = false;
+      targetRecs.delete(id);
     }
     return out;
   }
@@ -322,7 +344,7 @@ export function createNet(hooks) {
     const players = [{
       id: 0, name: myName, x: p.pos.x, y: p.pos.y, z: p.pos.z, yaw: p.yaw, pitch: p.pitch,
       vx: p.vel.x, vz: p.vel.z, crouch: !!p.crouch, prone: !!p.prone, sprint: !!p.sprinting,
-      ads: S.adsT || 0, weapon: w ? w.id : 'tavor', hp: p.hp, alive: S.state === 'playing',
+      ads: S.adsT || 0, weapon: w ? w.id : 'tavor', hp: p.hp, alive: S.state === 'playing' || S.state === 'paused',
     }];
     for (const q of peers.values()) {
       players.push({
@@ -366,6 +388,7 @@ export function createNet(hooks) {
       if (hooks.noteHit) hooks.noteHit();
       if (m.tally) hooks.creditKill(!!m.head, !!m.nade);
     }
+    else if (m.t === 'feed') hooks.killLine(m.id === myId ? 'You' : (m.name || 'Ally'), m.weapon || 'Weapon', m.enemy || 'Militant', !!m.head);
     else if (m.t === 'full') { status('That mission is full (4 players).'); stop(); }
     else if (m.t === 'closed') { if (role === 'client') { status('Lost the host.'); hooks.disconnected(); role = null; } }
     else if (m.t === 'menu') { live = false; cls = null; clearWorld(); hooks.backToMenu(); }
@@ -399,6 +422,7 @@ export function createNet(hooks) {
       }
       return out;
     },
+    selfName() { return myName; },
     peerMarks() {
       const out = [];
       for (const b of bodies.values()) if (b.goal && b.goal.alive !== false) out.push(b.body.root.position);
@@ -463,7 +487,8 @@ export function createNet(hooks) {
       let n = 0;
       out.set(0, 0, 0);
       const p = hooks.getPlayer();
-      if (hooks.getState().state === 'playing') { out.add(p.pos); n++; }
+      const st = hooks.getState().state;
+      if (st === 'playing' || st === 'paused') { out.add(p.pos); n++; }
       for (const q of peers.values()) if (q.alive) { out.x += q.x; out.z += q.z; n++; }
       if (!n) return false;
       out.multiplyScalar(1 / n);
@@ -474,7 +499,8 @@ export function createNet(hooks) {
         for (const [id, m] of poses) { const p = peers.get(id); if (p) applyPose(p, m); }
         poses.clear();
         while (inbox.length) { const item = inbox.shift(); onClientMessage(item.id, item.m); }
-        if (hooks.getState().state === 'playing' || hooks.getState().state === 'dead') {
+        const sim = hooks.getState().state;
+        if (sim === 'playing' || sim === 'dead' || sim === 'paused') {
           snapT += dt;
           if (snapT >= SNAP_DT) { snapT = 0; send(buildSnap()); }
           mirrorPeers();

@@ -368,11 +368,11 @@ function updateEnemy(e, dt) {
   e.losT -= dt;
   if (e.losT <= 0) {
     e.losT = rand(0.18, 0.3);
-    // Engage the nearest visible soldier: the player or a squad bot (the player is slightly preferred).
+    // Nearest visible soldier: the host, a joined friend, or a squad bot. Nobody is preferred.
     let best = null;
     if (S.state === 'playing' || (net && net.isHost)) {
       const cands = [player, ...squad.alive(), ...(net ? net.targets() : [])]
-        .filter((c) => c !== player || S.state === 'playing')
+        .filter((c) => c !== player || playerInFight())
         .map((c) => ({ c, d: Math.hypot(c.pos.x - e.pos.x, c.pos.z - e.pos.z) }))
         .filter((o) => o.d < t.range)
         .sort((a, b) => a.d - b.d);
@@ -390,7 +390,7 @@ function updateEnemy(e, dt) {
     e.vis = vis;
     if (best) e.tgt = best;
   }
-  if (!e.tgt || (e.tgt !== player && !e.tgt.alive) || (e.tgt === player && S.state !== 'playing')) {
+  if (!e.tgt || (e.tgt !== player && !e.tgt.alive) || (e.tgt === player && !playerInFight())) {
     e.tgt = (net && net.targets().find((h) => h.alive)) || player;
     if (e.vis) { e.vis = e.seen = false; }
   }
@@ -721,7 +721,7 @@ function updateGrenades(dt) {
     gr.m.position.copy(next);
     gr.m.rotation.x += gr.vel.length() * dt * 3;
     if (gr.fuse <= 0) {
-      explode(gr.pos.clone().add(V(0, 0.2, 0)), 9, 210, true, UP, V(gr.pos.x, groundHeightAt(gr.pos.x, gr.pos.z, gr.pos.y + 0.1, 0), gr.pos.z), gr.owner || null);
+      explode(gr.pos.clone().add(V(0, 0.2, 0)), 9, 210, true, UP, V(gr.pos.x, groundHeightAt(gr.pos.x, gr.pos.z, gr.pos.y + 0.1, 0), gr.pos.z), gr.killer || null);
       scene.remove(gr.m);
       grenades.splice(i, 1);
     }
@@ -1072,7 +1072,7 @@ function resupply() {
 }
 
 function damagePlayer(amount, fromPos, explosive) {
-  if (S.state !== 'playing') return;
+  if (!playerInFight()) return;
   let a = amount;
   if (player.armor > 0) {
     const absorb = a * (explosive ? 0.45 : 0.65);
@@ -1121,14 +1121,32 @@ function flashMsg(html, dur = 2) {
   hud.msg.style.opacity = 1;
   S.msgT = dur;
 }
-function addKillfeed(e, head, nade, bot = null) {
+function escHud(s) {
+  return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+}
+function addKillLine(who, weapon, enemy, head) {
   const el = document.createElement('div');
   el.className = 'kf';
-  const wname = nade ? 'M67 Frag' : bot ? bot.def.name : curW().def.name;
-  el.innerHTML = `<span class="${bot ? 'mate' : 'you'}">${bot ? bot.name : 'You'}</span> <span class="wp">[${wname}]</span> <span class="en">${e.t.name}</span>${head ? ' <span class="hs">HEADSHOT</span>' : ''}`;
+  const you = who === 'You';
+  el.innerHTML = `<span class="${you ? 'you' : 'mate'}">${escHud(who)}</span> <span class="wp">[${escHud(weapon)}]</span> <span class="en">${escHud(enemy)}</span>${head ? ' <span class="hs">HEADSHOT</span>' : ''}`;
   hud.kf.prepend(el);
   while (hud.kf.children.length > 5) hud.kf.lastChild.remove();
   setTimeout(() => el.remove(), 4500);
+}
+function addKillfeed(e, head, nade, bot = null) {
+  const weapon = nade ? 'M67 Frag' : bot && bot.def ? bot.def.name : curW().def.name;
+  const who = bot && bot.name ? bot.name : 'You';
+  addKillLine(who, weapon, e.t.name, head);
+  if (net && net.isHost) {
+    net.send({
+      t: 'feed',
+      id: bot && bot.remote ? bot.id : 0,
+      name: bot && bot.name ? bot.name : net.selfName(),
+      weapon,
+      enemy: e.t.name,
+      head: !!head,
+    });
+  }
 }
 function addDamageIndicator(from) {
   const dx = from.x - player.pos.x, dz = from.z - player.pos.z;
@@ -1370,10 +1388,14 @@ function applyStab(peer, m) {
   if (at.pos.distanceTo(V(peer.x, peer.y, peer.z)) > 3) at.pos.set(peer.x, peer.y, peer.z);
   resolveMelee(at, { name: peer.name, def: { name: 'Karambit' }, remote: true, id: peer.id });
 }
+function throwerCredit(peer) {
+  return { name: peer.name, def: { name: 'M67 Frag' }, remote: true, id: peer.id };
+}
 function spawnGrenadeFrom(peer, m) {
   if (!peer.alive) return;
   const pos = V(m.x, m.y, m.z);
-  if (pos.distanceTo(V(peer.x, peer.y, peer.z)) > 5) return;
+  const feet = V(peer.x, peer.y, peer.z);
+  if (pos.distanceTo(feet) > 12) pos.set(peer.x, peer.y + (peer.eye || 1.6), peer.z);
   const vel = V(m.vx, m.vy, m.vz);
   if (vel.length() > 40) vel.setLength(40);
   const g = makeGrenadeMesh();
@@ -1382,13 +1404,13 @@ function spawnGrenadeFrom(peer, m) {
   scene.add(g.root);
   grenades.push({
     m: g.root, pos, vel, fuse: Math.min(4, Math.max(0.05, m.fuse || 1)), gid: nadeSeq++,
-    owner: { name: peer.name, def: { name: 'M67 Frag' }, remote: true, id: peer.id },
+    killer: throwerCredit(peer),
   });
 }
 function explodeFrom(peer, m) {
   const p = V(m.x, m.y, m.z);
-  if (p.distanceTo(V(peer.x, peer.y + 1, peer.z)) > 3) return;
-  explode(p, 9, 210, true, UP, V(p.x, groundHeightAt(p.x, p.z, p.y, 0), p.z));
+  if (p.distanceTo(V(peer.x, peer.y + 1, peer.z)) > 4) p.set(peer.x, peer.y + 1, peer.z);
+  explode(p, 9, 210, true, UP, V(p.x, groundHeightAt(p.x, p.z, p.y, 0), p.z), throwerCredit(peer));
 }
 function netRevive() {
   player.hp = 100;
@@ -1492,6 +1514,12 @@ function updateWaves(dt) {
     flashMsg(`WAVE ${S.wave} CLEARED\n<small>+${S.wave * 250} bonus · Regroup and resupply</small>`, 3);
   }
 }
+function hostMenuOpen() {
+  return S.state === 'paused' && !!(net && net.isHost);
+}
+function playerInFight() {
+  return S.state === 'playing' || hostMenuOpen();
+}
 function pauseGame() {
   S.state = 'paused';
   mouse.left = mouse.right = false;
@@ -1504,6 +1532,7 @@ function resumeGame() {
 }
 function gameOver(explosive = false, fallDir = -1) {
   S.state = 'dead';
+  $('pause').classList.add('hidden');
   dropLiveGrenade();
   S.tpDead = tpActive();
   S.deadT = 0;
@@ -1915,7 +1944,7 @@ function loop() {
 }
 function frame(dt) {
   if (S.state === 'loading') return;
-  if (S.state === 'playing') {
+  if (S.state === 'playing' || hostMenuOpen() || (S.state === 'paused' && net && net.isClient)) {
     S.time += dt;
     if (net && net.online) net.tick(dt);
     if (S.state === 'playing') {
@@ -1923,14 +1952,16 @@ function frame(dt) {
       updateWeapon(dt);
       updateViewModel(dt);
       updateBody(dt);
-      if (!(net && net.isClient)) {
-        squad.update(dt, true);
-        updateEnemies(dt);
-        updateRockets(dt);
-        updateGrenades(dt);
-        updatePickups(dt);
-        updateWaves(dt);
-      }
+    }
+    if (hostMenuOpen() || (S.state === 'playing' && !(net && net.isClient))) {
+      squad.update(dt, true);
+      updateEnemies(dt);
+      updateRockets(dt);
+      updateGrenades(dt);
+      updatePickups(dt);
+      updateWaves(dt);
+    }
+    if (S.state === 'playing') {
       updateHUD(dt);
       drawMinimap();
     }
@@ -1984,7 +2015,7 @@ function frame(dt) {
     updateEnemies(dt);
     updateGrenades(dt);
   }
-  if (S.state !== 'paused') {
+  if (S.state !== 'paused' || hostMenuOpen()) {
     updateLights(dt);
     updateEffects(dt, S.time, camera.position);
   }
@@ -2156,6 +2187,7 @@ async function boot() {
     enter(cls, spawn) { deploy(cls); player.pos.set(spawn.x, spawn.y, spawn.z); },
     applyShot, applyStab, spawnGrenade: spawnGrenadeFrom, explodeAt: explodeFrom,
     hitmarker: showHitmarker,
+    killLine: addKillLine,
     noteHit() { player.hits++; },
     creditKill(head, nadeKill) {
       player.kills++;
