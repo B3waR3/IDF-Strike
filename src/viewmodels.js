@@ -379,8 +379,8 @@ export function buildViewModel(id, root) {
     MAG_ALIGN = { ...ON_MAG, p: V(add(grab, [-0.01, -0.1, 0.02])) };
     SLAP = pose([magC.x, mb.min.y - 0.035, magC.z], [0, 0.2, -1], [0, 1, 0], { back: 0.03, lift: 0.02, curl: 0.25, thumb: 0.1 });
     OFF = pose(add(grip, [-0.09, -0.09, 0.07]), [0.3, 0.2, -1], [1, 0.4, 0], { curl: 0.5 });
-    // Relaxed guard fist, palm down with the knuckles forward, wrist in line with the forearm.
-    if (L.knife) SUPPORT = pose([-0.14, -0.2, -0.46], [0.25, 0.15, -1], [0.3, -1, 0.1], { cam: true, curl: 1.15, thumb: 0.7 });
+    // Off hand beside the knife: palm down, fingers forward, wrist straight. No sideways roll.
+    if (L.knife) SUPPORT = pose([-0.18, -0.24, -0.4], [0, -0.08, -1], [0, -1, 0], { cam: true, curl: 0.55, thumb: 0.25, back: 0.035, lift: 0.015 });
   } else {
     SUPPORT = pose(fore, L.L.along, L.L.palm);
     grab = [magC.x, magC.y - magH * 0.15, magC.z];

@@ -717,13 +717,12 @@ export function createPlayerBody() {
     root.localToWorld(poleL.set(0.5, 1.08 + dy, 0.1));
     solveIK(B.RightArm, B.RightForeArm, B.RightHand, gripW, poleR);
     solveIK(B.LeftArm, B.LeftForeArm, B.LeftHand, handW, poleL);
-    orientHand(HR, fwdW, tmp.copy(rightW).negate());
+    // Fist points forward with the palm down, so the wrist stays in line with the forearm.
     root.getWorldQuaternion(q);
-    a.set(0.05, -0.55, 0.8).applyQuaternion(q);
-    b.set(-0.9, 0.15, 0.1).applyQuaternion(q);
-    orientHand(HL, a, b);
-    curlFingers(HR, 1.4, 0.9);
-    curlFingers(HL, 0.62, 0.4);
+    orientHand(HR, a.set(-0.05, -0.15, 1).applyQuaternion(q), b.set(0, -1, 0.05).applyQuaternion(q));
+    orientHand(HL, tmp.set(0.1, -0.2, 0.95).applyQuaternion(q), local.set(0.35, -0.85, 0).applyQuaternion(q));
+    curlFingers(HR, 1.25, 0.8);
+    curlFingers(HL, 0.4, 0.25);
   }
 
   function leftTarget(p, empty, out) {
@@ -870,7 +869,7 @@ export function createPlayerBody() {
       let attached = false;
       if (reloading) attached = leftTarget(st.reloadP, st.empty, handW);
       else if (cur.pistol) gun.root.localToWorld(handW.copy(gun.grip).add(local.set(-0.03, -0.012, 0)));
-      else handW.copy(foreW);
+      else gun.root.localToWorld(handW.copy(gun.fore).add(local.set(-0.04, -0.02, -0.05)));
       solveIK(B.RightArm, B.RightForeArm, B.RightHand, gripW, poleR);
       solveIK(B.LeftArm, B.LeftForeArm, B.LeftHand, handW, poleL);
       gun.root.getWorldQuaternion(q);
@@ -879,7 +878,7 @@ export function createPlayerBody() {
       rightW.set(1, 0, 0).applyQuaternion(q);
       orientHand(HR, tmp.copy(fwdW).addScaledVector(upW, -0.35), a.copy(rightW).negate());
       if (cur.pistol && !reloading) orientHand(HL, tmp.copy(fwdW).multiplyScalar(0.7).addScaledVector(upW, -0.6).addScaledVector(rightW, 0.4), rightW);
-      else orientHand(HL, fwdW, tmp.copy(upW).addScaledVector(rightW, -0.35));
+      else orientHand(HL, fwdW, tmp.copy(upW).negate());
       curlFingers(HR, 1.15, 0.5);
       curlFingers(HL, reloading ? 0.9 : 1.0, 0.5);
 
