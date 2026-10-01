@@ -677,9 +677,9 @@ export function createPlayerBody() {
     placeBandage(kit, root, t, arm, rollW, packQ);
   }
 
-  // Karambit in the right hand. Root faces +Z. A stab cocks back to the shoulder, then thrusts.
-  const K_READY = K(-0.18, 1.12, 0.42), K_COCK = K(-0.32, 1.42, 0.1), K_THRUST = K(-0.1, 1.24, 0.48);
-  const K_OFF = K(0.24, 0.98, 0.22);
+  // Karambit in the right fist, claw forward. The left hand is a guard, not a second grip on the handle.
+  const K_READY = K(-0.22, 1.16, 0.34), K_COCK = K(-0.36, 1.48, -0.02), K_THRUST = K(-0.06, 1.18, 0.62);
+  const K_OFF = K(0.2, 1.32, 0.46);
   function knifePose(st, dy) {
     const T = STAB_TIMING;
     const t = st.stab;
@@ -687,16 +687,16 @@ export function createPlayerBody() {
     else a.copy(K_READY);
     a.y += dy;
     b.copy(K_OFF).y += dy;
-    if (proneK > 0.01) { a.lerp(K(-0.14, 0.26, 0.62), proneK); b.lerp(K(0.2, 0.2, 0.38), proneK); }
+    if (proneK > 0.01) { a.lerp(K(-0.2, 0.28, 0.52), proneK); b.lerp(K(0.18, 0.24, 0.36), proneK); }
     gunFrame.visible = true;
     gunPivot.position.copy(a);
-    // Palm down with the ring toward the body's centre, like the first-person carry.
-    gunPivot.rotation.set(0.1, 0, -Math.PI / 2);
+    // The mesh's blade is local -Y. Pitch it forward so the claw leads, instead of hanging at the ground.
+    gunPivot.rotation.set(0.85, 0.25, -0.35);
     if (st.inspect >= 0) {
       const s = Math.sin(Math.min(1, st.inspect) * Math.PI);
-      gunPivot.rotation.y += 1.3 * s;
-      gunPivot.rotation.x -= 0.55 * s;
-      gunPivot.position.y += 0.14 * s;
+      gunPivot.rotation.y += 1.1 * s;
+      gunPivot.rotation.x -= 0.4 * s;
+      gunPivot.position.y += 0.12 * s;
     }
     root.updateMatrixWorld(true);
     const { gun } = cur;
@@ -704,16 +704,16 @@ export function createPlayerBody() {
     fwdW.set(0, 0, -1).applyQuaternion(q);
     upW.set(0, 1, 0).applyQuaternion(q);
     rightW.set(1, 0, 0).applyQuaternion(q);
-    // Hammer grip: the wrist sits behind the upright handle, palm against the knife's left side.
-    gun.root.localToWorld(gripW.copy(gun.grip)).addScaledVector(fwdW, -0.06).addScaledVector(rightW, 0.02);
+    gun.root.localToWorld(gripW.copy(gun.grip)).addScaledVector(fwdW, -0.045);
     root.localToWorld(handW.copy(b));
-    root.localToWorld(poleR.set(-0.8, 0.9 + dy, -0.3));
-    root.localToWorld(poleL.set(0.8, 0.8 + dy, -0.1));
+    root.localToWorld(poleR.set(-0.28, 0.55 + dy, -0.05));
+    root.localToWorld(poleL.set(0.22, 0.7 + dy, 0.05));
     solveIK(B.RightArm, B.RightForeArm, B.RightHand, gripW, poleR);
     solveIK(B.LeftArm, B.LeftForeArm, B.LeftHand, handW, poleL);
-    orientHand(HR, tmp.copy(fwdW).addScaledVector(upW, 0.05), a.copy(rightW).negate());
-    curlFingers(HR, 1.5, 0.95);
-    curlFingers(HL, 0.85, 0.45);
+    orientHand(HR, fwdW, tmp.copy(rightW).negate());
+    orientHand(HL, fwdW, upW);
+    curlFingers(HR, 1.4, 0.9);
+    curlFingers(HL, 0.45, 0.3);
   }
 
   function leftTarget(p, empty, out) {
@@ -836,8 +836,8 @@ export function createPlayerBody() {
       const { gun } = cur;
       gun.root.localToWorld(gripW.copy(gun.grip));
       gun.root.localToWorld(foreW.copy(gun.fore));
-      root.localToWorld(poleR.set(-0.8, 0.9 + drop_, -0.3));
-      root.localToWorld(poleL.set(0.8, 0.8 + drop_, -0.1));
+      root.localToWorld(poleR.set(-0.34, 0.2 + drop_, -0.02));
+      root.localToWorld(poleL.set(0.22, 0.42 + drop_, 0.12));
       let attached = false;
       if (reloading) attached = leftTarget(st.reloadP, st.empty, handW);
       else if (cur.pistol) gun.root.localToWorld(handW.copy(gun.grip).add(local.set(-0.03, -0.012, 0)));

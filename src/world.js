@@ -8,7 +8,7 @@ export const HALF = 114;
 export const colliders = [];
 export const mapRects = [];
 export const shafts = [];
-export const world = { resupplyPos: null, tankPos: null, spawn: new THREE.Vector3(4, 0, 106) };
+export const world = { resupplyPos: null, shekemPos: null, tankPos: null, spawn: new THREE.Vector3(4, 0, 106) };
 
 const rand = (a, b) => a + Math.random() * (b - a);
 const randInt = (a, b) => Math.floor(rand(a, b + 1));
@@ -624,6 +624,60 @@ function electricLine(scene, x0, z0, x1, z1) {
   scene.add(new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: 0x151515 })));
 }
 
+function shekemSign() {
+  const c = document.createElement('canvas');
+  c.width = 512;
+  c.height = 180;
+  const g = c.getContext('2d');
+  g.fillStyle = '#1b2416';
+  g.fillRect(0, 0, 512, 180);
+  g.strokeStyle = '#d4b45a';
+  g.lineWidth = 10;
+  g.strokeRect(8, 8, 496, 164);
+  g.fillStyle = '#f3ead2';
+  g.textAlign = 'center';
+  g.direction = 'rtl';
+  g.font = 'bold 78px sans-serif';
+  g.fillText('שק״ם', 256, 92);
+  g.direction = 'ltr';
+  g.fillStyle = '#d4b45a';
+  g.font = 'bold 32px sans-serif';
+  g.fillText('SHEKEM', 256, 142);
+  const map = new THREE.CanvasTexture(c);
+  map.colorSpace = THREE.SRGBColorSpace;
+  const sign = new THREE.Mesh(new THREE.PlaneGeometry(1.7, 0.6), new THREE.MeshBasicMaterial({ map }));
+  sign.position.set(0, 2.35, 0.36);
+  return sign;
+}
+function shekem(scene, x, z) {
+  const wood = new THREE.MeshStandardMaterial({ color: 0x6a5132, roughness: 0.82 });
+  const cloth = new THREE.MeshStandardMaterial({ color: 0x3c4a30, roughness: 0.92 });
+  const metal = new THREE.MeshStandardMaterial({ color: 0x8d9288, roughness: 0.4, metalness: 0.45 });
+  const box = (w, h, d, mat, px, py, pz) => {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+    m.position.set(px, py, pz);
+    m.castShadow = m.receiveShadow = true;
+    return m;
+  };
+  const g = new THREE.Group();
+  g.add(box(2.4, 1.02, 0.72, wood, 0, 0.51, 0));
+  g.add(box(2.5, 0.07, 0.84, metal, 0, 1.05, 0));
+  g.add(box(0.08, 1.15, 0.08, metal, -1.15, 1.62, 0.55));
+  g.add(box(0.08, 1.15, 0.08, metal, 1.15, 1.62, 0.55));
+  const awning = box(2.6, 0.08, 1.35, cloth, 0, 2.16, 0.28);
+  g.add(awning);
+  g.add(box(0.45, 0.28, 0.35, M.crate, -0.7, 1.24, 0));
+  g.add(box(0.32, 0.22, 0.28, M.crate, 0.15, 1.2, 0.05));
+  g.add(box(0.22, 0.34, 0.22, metal, 0.7, 1.26, -0.05));
+  g.add(shekemSign());
+  g.position.set(x, 0, z);
+  // Front of the stall faces the fight, so the sign is readable on the walk back to the Merkava.
+  g.rotation.y = Math.PI;
+  scene.add(g);
+  colliderBox(x, z, 2.5, 0.9, 0, 1.1, 'metal', 'c');
+  world.shekemPos = new THREE.Vector3(x, 0, z - 1.9);
+  world.resupplyPos = world.shekemPos;
+}
 function merkava(scene, x, z) {
   const { root } = makeProp('merkava');
   root.rotation.y = Math.PI + 0.05;
@@ -781,20 +835,7 @@ export function buildWorld(sc) {
   }
 
   merkava(scene, -9, 107);
-  world.resupplyPos = new THREE.Vector3(-4.2, 0, 103.5);
-  const crate = new THREE.Mesh(new RoundedBoxGeometry(1.4, 0.8, 1.0, 2, 0.04), M.crate);
-  crate.position.set(world.resupplyPos.x, 0.4, world.resupplyPos.z);
-  crate.castShadow = crate.receiveShadow = true;
-  scene.add(crate);
-  const crate2 = new THREE.Mesh(new RoundedBoxGeometry(1.0, 0.6, 0.7, 2, 0.04), M.crate);
-  crate2.position.set(world.resupplyPos.x + 0.1, 1.1, world.resupplyPos.z);
-  crate2.rotation.y = 0.35;
-  crate2.castShadow = crate2.receiveShadow = true;
-  scene.add(crate2);
-  const stripe = new THREE.Mesh(new THREE.BoxGeometry(1.42, 0.08, 1.02), new THREE.MeshStandardMaterial({ color: 0xd4b000, roughness: 0.6 }));
-  stripe.position.set(world.resupplyPos.x, 0.55, world.resupplyPos.z);
-  scene.add(stripe);
-  colliderBox(world.resupplyPos.x, world.resupplyPos.z, 1.4, 1.0, 0, 0.8, 'metal', 'c');
+  shekem(scene, -3.4, 101.2);
   sandbagWall(4, 99.5, false, 3.2);
   sandbagWall(-1, 98.8, false, 2.6);
 

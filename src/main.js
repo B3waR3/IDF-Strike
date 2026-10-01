@@ -311,7 +311,7 @@ function spawnEnemy() {
   const s = cand[randInt(0, cand.length - 1)];
   const ch = createCharacter(typeId, t.gun);
   const e = {
-    t, typeId, nid: enemySeq++, ch, hp: t.hp * (1 + (S.wave - 1) * 0.03),
+    t, typeId, nid: enemySeq++, ch, hp: t.hp * (1 + Math.max(0, S.wave - 1) * 0.08),
     pos: V(s.x + rand(-0.3, 0.3), s.y, s.z + rand(-0.3, 0.3)),
     rot: rand(0, Math.PI * 2), emerge: 1.4, dead: false, deathT: 0, removeT: 12, fallDir: 1,
     losT: rand(0, 0.3), vis: false, seen: false, reactT: 0, fireT: 0, burstLeft: 0,
@@ -570,11 +570,11 @@ function killEnemy(e, headshot, byNade, dir, blast = false, credit = null) {
   e.dead = true;
   e.headDead = !!headshot;
   S.alive--;
-  if (credit && credit.remote) net.send({ t: 'marker', kill: true, head: !!headshot, nade: !!byNade, tally: true }, credit.id);
-  else if (credit) player.score += 25;
-  else {
+  const pts = e.t.sniper ? 60 : e.t.rocket ? 50 : 30;
+  if (credit && credit.remote) net.send({ t: 'marker', kill: true, head: !!headshot, nade: !!byNade, tally: true, pts }, credit.id);
+  else if (!credit) {
     player.kills++;
-    player.score += 100 + (headshot ? 50 : 0) + (byNade ? 25 : 0);
+    player.score += pts;
     if (headshot) player.headshots++;
   }
   if (e.glint) e.glint.visible = false;
@@ -585,9 +585,9 @@ function killEnemy(e, headshot, byNade, dir, blast = false, credit = null) {
   rebuildHitList();
   addKillfeed(e, headshot, byNade, credit);
   const r = Math.random();
-  if (r < 0.35) spawnPickup('ammo', e.pos);
-  else if (r < 0.47) spawnPickup('ifak', e.pos);
-  else if (r < 0.57) spawnPickup('plate', e.pos);
+  if (r < 0.1) spawnPickup('ammo', e.pos);
+  else if (r < 0.14) spawnPickup('ifak', e.pos);
+  else if (r < 0.17) spawnPickup('plate', e.pos);
 }
 
 function updateRockets(dt) {
@@ -1058,17 +1058,105 @@ function medSounds(t) {
     else SFX.playWrap();
   }
 }
-function resupply() {
-  if (!world.resupplyPos || S.resupplyCD > 0) return;
-  if (Math.hypot(player.pos.x - world.resupplyPos.x, player.pos.z - world.resupplyPos.z) > 3) return;
-  for (const w of player.weapons) { w.reserve = w.def.mag * w.def.reserveMags; w.mag = w.def.mag + (w.def.chamber ? 1 : 0); }
-  player.frags = player.cls.frags;
-  player.armor = player.armorMax;
-  player.ifaks = Math.max(player.ifaks, player.cls.ifaks);
-  S.resupplyCD = 60;
-  S.reloading = false;
-  flashMsg('RESUPPLIED\n<small>Ammo, grenades, armor plates and IFAKs restocked</small>', 2);
-  SFX.playGear(); SFX.playMagIn(0.1); SFX.playMagIn(0.4);
+const SHOP = [
+  { id: 'mag', name: 'Magazine', detail: 'One mag for the gun in your hands', price: 20 },
+  { id: 'frag', name: 'M67 frag', detail: 'One grenade', price: 25 },
+  { id: 'ifak', name: 'IFAK', detail: 'Israeli bandage', price: 40 },
+  { id: 'plate', name: 'Armor plate', detail: 'Restore 40 armor', price: 50 },
+  { id: 'glock', name: 'Glock 17', detail: '9mm sidearm', price: 90, weapon: 'glock' },
+  { id: 'jericho', name: 'Jericho 941', detail: 'IWI 9mm sidearm', price: 120, weapon: 'jericho' },
+  { id: 'tavor', name: 'Tavor X95', detail: 'IWI bullpup rifle', price: 200, weapon: 'tavor' },
+  { id: 'm4', name: 'M4A1', detail: 'Carbine', price: 220, weapon: 'm4' },
+  { id: 'negev', name: 'Negev', detail: 'IWI light machine gun', price: 340, weapon: 'negev' },
+  { id: 'm24', name: 'M24 SWS', detail: '7.62 marksman rifle', price: 400, weapon: 'm24' },
+];
+const shopOpen = { on: false };
+let suppressPause = false;
+function nearShekem() {
+  const p = world.shekemPos || world.resupplyPos;
+  return p && Math.hypot(player.pos.x - p.x, player.pos.z - p.z) < 3.2;
+}
+function matchNote(text) {
+  const log = $('match-log');
+  if (!log || !text) return;
+  const el = document.createElement('div');
+  el.className = 'match-line';
+  el.textContent = text;
+  log.appendChild(el);
+  while (log.children.length > 6) log.firstChild.remove();
+  setTimeout(() => el.remove(), 8000);
+}
+function renderShop() {
+  $('shop-points').textContent = `POINTS  ${player.score}`;
+  const list = $('shop-list');
+  list.replaceChildren(...SHOP.map((item) => {
+    const row = document.createElement('div');
+    row.className = 'shop-row';
+    const owned = item.weapon && player.weapons.some((w) => w.id === item.weapon);
+    const info = document.createElement('div');
+    const title = document.createElement('b');
+    title.textContent = item.name;
+    const detail = document.createElement('small');
+    detail.textContent = item.detail;
+    info.append(title, detail);
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.textContent = owned ? 'EQUIPPED' : String(item.price);
+    btn.disabled = owned || player.score < item.price;
+    btn.onclick = () => buyItem(item);
+    row.append(info, btn);
+    return row;
+  }));
+}
+function openShop() {
+  if (S.state !== 'playing' || shopOpen.on || !nearShekem()) return;
+  shopOpen.on = true;
+  suppressPause = true;
+  renderShop();
+  $('shop').classList.remove('hidden');
+  document.exitPointerLock();
+}
+function closeShop() {
+  if (!shopOpen.on) return;
+  shopOpen.on = false;
+  $('shop').classList.add('hidden');
+  if (S.state === 'playing') canvas.requestPointerLock();
+}
+function discardWeapon(w) {
+  if (!w?.model) return;
+  w.model.group.removeFromParent();
+  w.model.arms.removeFromParent();
+}
+function buyItem(item) {
+  if (!shopOpen.on || player.score < item.price) { renderShop(); return; }
+  if (item.id === 'mag') {
+    const w = curW();
+    if (w.def.type === 'melee') { flashMsg('SWITCH TO A GUN', 1); return; }
+    const cap = w.def.mag * (w.def.reserveMags + 3);
+    if (w.reserve >= cap) { flashMsg('AMMO FULL', 1); return; }
+    w.reserve = Math.min(cap, w.reserve + w.def.mag);
+  } else if (item.id === 'frag') {
+    if (player.frags >= 6) { flashMsg('GRENADES FULL', 1); return; }
+    player.frags++;
+  } else if (item.id === 'ifak') {
+    if (player.ifaks >= 5) { flashMsg('IFAKS FULL', 1); return; }
+    player.ifaks++;
+  } else if (item.id === 'plate') {
+    if (player.armor >= player.armorMax - 0.5) { flashMsg('ARMOR FULL', 1); return; }
+    player.armor = Math.min(player.armorMax, player.armor + 40);
+    if (net && net.isClient) net.send({ t: 'armor', v: player.armor });
+  } else if (item.weapon) {
+    if (player.weapons.some((w) => w.id === item.weapon)) { renderShop(); return; }
+    const def = WEAPONS[item.weapon];
+    const slot = def.type === 'pistol' ? 1 : 0;
+    discardWeapon(player.weapons[slot]);
+    player.weapons[slot] = makeWeapon(item.weapon);
+    player.cur = slot;
+    body.setWeapon(item.weapon);
+  }
+  player.score -= item.price;
+  SFX.playGear();
+  renderShop();
 }
 
 function damagePlayer(amount, fromPos, explosive) {
@@ -1181,7 +1269,7 @@ function updateHUD(dt) {
   hud.hostiles.textContent = S.alive + S.toSpawn;
   hud.wave.textContent = 'WAVE ' + S.wave;
   hud.obj.textContent = S.intermission > 0
-    ? (S.wave === 0 ? `Deploying — hostiles expected in ${Math.ceil(S.intermission)}s` : `Sector clear — next wave in ${Math.ceil(S.intermission)}s · Resupply at the Merkava`)
+    ? (S.wave === 0 ? `Deploying — hostiles expected in ${Math.ceil(S.intermission)}s` : `Sector clear — next wave in ${Math.ceil(S.intermission)}s · The Shekem is by the Merkava`)
     : 'Eliminate militants emerging from the tunnel shafts';
 
   const scoped = d.scope && S.adsT > 0.9;
@@ -1203,11 +1291,9 @@ function updateHUD(dt) {
     hud.progBar.style.width = (S.reloadT / S.reloadDur) * 100 + '%';
   } else hud.prog.classList.add('hidden');
 
-  const rp = world.resupplyPos;
-  const nearCrate = rp && Math.hypot(player.pos.x - rp.x, player.pos.z - rp.z) < 3;
-  if (nearCrate) {
+  if (nearShekem() && !shopOpen.on) {
     hud.prompt.style.display = 'block';
-    hud.prompt.innerHTML = S.resupplyCD > 0 ? `Resupply available in ${Math.ceil(S.resupplyCD)}s` : 'Press <kbd>F</kbd> to resupply';
+    hud.prompt.innerHTML = 'Press <kbd>F</kbd> — שק״ם Shekem';
   } else hud.prompt.style.display = 'none';
 
   hud.mount.className = mount.k > 0.5 ? 'on' : mount.can ? 'can' : '';
@@ -1286,7 +1372,8 @@ function drawMinimap() {
 // ============================================================
 document.addEventListener('keydown', (e) => {
   keys[e.code] = true;
-  if (S.state !== 'playing') return;
+  if (e.code === 'Escape' && shopOpen.on) { closeShop(); e.preventDefault(); return; }
+  if (S.state !== 'playing' || shopOpen.on) return;
   switch (e.code) {
     case 'KeyR': startReload(); break;
     case 'Digit1': switchWeapon(0); break;
@@ -1296,7 +1383,7 @@ document.addEventListener('keydown', (e) => {
     case 'KeyB': { const w = curW(); if (w.def.modes.length > 1) { w.mode = (w.mode + 1) % w.def.modes.length; SFX.playClick(0, 2000, 0.15); } break; }
     case 'KeyG': if (!e.repeat) startGrenade(); break;
     case 'KeyH': useIfak(); break;
-    case 'KeyF': resupply(); break;
+    case 'KeyF': openShop(); break;
     case 'KeyI':
       if (S.inspectT < 0 && !nade.phase && !S.reloading && S.switchT <= 0 && stab.t < 0 && S.ifakT <= 0) { S.inspectT = 0; SFX.playGear(); }
       break;
@@ -1321,6 +1408,7 @@ document.addEventListener('keyup', (e) => {
   if (e.code === 'KeyG') nade.held = false;
 });
 document.addEventListener('mousedown', (e) => {
+  if (shopOpen.on) return;
   if (e.button === 0 && S.state === 'dead' && net && net.online) spectateI++;
   if (S.state !== 'playing') return;
   if (document.pointerLockElement !== canvas) { canvas.requestPointerLock(); return; }
@@ -1346,7 +1434,9 @@ document.addEventListener('mousemove', (e) => {
   mouseDX += e.movementX; mouseDY += e.movementY;
 });
 document.addEventListener('pointerlockchange', () => {
-  if (document.pointerLockElement !== canvas && S.state === 'playing') pauseGame();
+  if (document.pointerLockElement === canvas) { suppressPause = false; return; }
+  if (suppressPause || shopOpen.on) return;
+  if (S.state === 'playing') pauseGame();
 });
 
 // ============================================================
@@ -1502,16 +1592,13 @@ function updateWaves(dt) {
     S.spawnT = Math.max(0.7, 2.6 - S.wave * 0.15);
   }
   if (S.toSpawn === 0 && S.alive === 0) {
-    player.score += S.wave * 250;
     S.intermission = 12;
     squad.reviveAll();
     if (net && net.isHost) {
       net.reviveHumans();
-      player.armor = player.armorMax;
       if (player.hp <= 0 || S.state === 'dead') netRevive();
-      else player.hp = 100;
     }
-    flashMsg(`WAVE ${S.wave} CLEARED\n<small>+${S.wave * 250} bonus · Regroup and resupply</small>`, 3);
+    flashMsg(`WAVE ${S.wave} CLEARED\n<small>Regroup at the Shekem</small>`, 3);
   }
 }
 function hostMenuOpen() {
@@ -1532,6 +1619,8 @@ function resumeGame() {
 }
 function gameOver(explosive = false, fallDir = -1) {
   S.state = 'dead';
+  shopOpen.on = false;
+  $('shop').classList.add('hidden');
   $('pause').classList.add('hidden');
   dropLiveGrenade();
   S.tpDead = tpActive();
@@ -1549,6 +1638,10 @@ function gameOver(explosive = false, fallDir = -1) {
   setTimeout(() => $('gameover').classList.remove('hidden'), 1200);
 }
 function toMenu() {
+  shopOpen.on = false;
+  $('shop').classList.add('hidden');
+  suppressPause = false;
+  if (net && net.isClient) net.depart();
   S.state = 'menu';
   document.exitPointerLock();
   clearEntities();
@@ -2095,6 +2188,7 @@ function buildMenu() {
     catch { $('net-status').textContent = 'Could not reach that host.'; }
   };
   $('resume-btn').onclick = resumeGame;
+  $('shop-close').onclick = closeShop;
   $('quit-btn').onclick = toMenu;
   $('redeploy-btn').onclick = toMenu;
   $('credits-btn').onclick = showCredits;
@@ -2189,11 +2283,12 @@ async function boot() {
     hitmarker: showHitmarker,
     killLine: addKillLine,
     noteHit() { player.hits++; },
-    creditKill(head, nadeKill) {
+    creditKill(head, _nadeKill, pts) {
       player.kills++;
       if (head) player.headshots++;
-      player.score += 100 + (head ? 50 : 0) + (nadeKill ? 25 : 0);
+      player.score += pts || 0;
     },
+    notice: matchNote,
     applyVitals(you) {
       if (!net.isClient) return;
       const prev = player.hp;

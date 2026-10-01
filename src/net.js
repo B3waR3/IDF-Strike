@@ -176,7 +176,12 @@ export function createNet(hooks) {
   }
 
   function onClientMessage(id, m) {
-    const p = peers.get(id) || peers.set(id, blank(id)).get(id);
+    let p = peers.get(id);
+    if (!p) {
+      if (m.t !== 'hello' && m.t !== 'ready') return;
+      p = blank(id);
+      peers.set(id, p);
+    }
     if (m.t === 'hello') {
       p.name = String(m.name || 'Soldier').slice(0, 16);
       send({ t: 'welcome', id, live }, id);
@@ -202,12 +207,26 @@ export function createNet(hooks) {
         p.hp = Math.min(100, p.hp + 50);
         p.healed = performance.now();
       }
+    } else if (m.t === 'armor') {
+      const max = p.armorMax || 100;
+      if (p.alive && fin(m.v)) p.armor = Math.max(0, Math.min(max, m.v));
     }
   }
 
   function beginMsg(id) {
     const base = hooks.spawnPoint();
     return { t: 'begin', ...slotSpawn(id, base) };
+  }
+
+  function forgetPeer(id) {
+    const p = peers.get(id);
+    if (!p) return;
+    const name = p.name || 'A player';
+    peers.delete(id);
+    dropBody(id);
+    const text = `${name} has left the match`;
+    if (hooks.notice) hooks.notice(text);
+    send({ t: 'notice', text });
   }
 
   function refreshStatus() {
@@ -370,7 +389,7 @@ export function createNet(hooks) {
     const m = packet.data;
     if (!m || typeof m !== 'object') return;
     if (role === 'host') {
-      if (m.t === 'leave') { peers.delete(packet.from); dropBody(packet.from); refreshStatus(); return; }
+      if (m.t === 'leave') { forgetPeer(packet.from); refreshStatus(); return; }
       onClientMessage(packet.from, m);
       return;
     }
@@ -386,9 +405,10 @@ export function createNet(hooks) {
     else if (m.t === 'marker') {
       hooks.hitmarker(!!m.kill, !!m.head);
       if (hooks.noteHit) hooks.noteHit();
-      if (m.tally) hooks.creditKill(!!m.head, !!m.nade);
+      if (m.tally) hooks.creditKill(!!m.head, !!m.nade, m.pts | 0);
     }
     else if (m.t === 'feed') hooks.killLine(m.id === myId ? 'You' : (m.name || 'Ally'), m.weapon || 'Weapon', m.enemy || 'Militant', !!m.head);
+    else if (m.t === 'notice' && m.text) hooks.notice(m.text);
     else if (m.t === 'full') { status('That mission is full (4 players).'); stop(); }
     else if (m.t === 'closed') { if (role === 'client') { status('Lost the host.'); hooks.disconnected(); role = null; } }
     else if (m.t === 'menu') { live = false; cls = null; clearWorld(); hooks.backToMenu(); }
@@ -480,8 +500,9 @@ export function createNet(hooks) {
       if (p.hp <= 0) { p.hp = 0; p.alive = false; }
     },
     reviveHumans() {
-      for (const p of peers.values()) if (p.ready) { p.hp = 100; p.armor = p.armorMax; p.alive = true; }
+      for (const p of peers.values()) if (p.ready && !p.alive) { p.hp = 100; p.armor = p.armorMax; p.alive = true; }
     },
+    depart() { if (role === 'client') send({ t: 'leave' }); },
     resetWorld() { clearWorld(); },
     centroid(out) {
       let n = 0;

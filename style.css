@@ -52,6 +52,8 @@ kbd { display: inline-block; padding: 1px 6px; border: 1px solid #7a7460; border
 .kf .wp { color: #aaa; }
 .kf .mate { color: #8fe0a0; font-weight: 700; }
 
+#match-log { position: absolute; left: 24px; bottom: 200px; width: 340px; pointer-events: none; }
+.match-line { font-size: 13px; color: #efe8d4; background: rgba(0,0,0,.55); padding: 4px 8px; margin-top: 4px; border-left: 2px solid #c8b270; }
 #squad { position: absolute; left: 24px; bottom: 150px; width: 280px; background: rgba(0,0,0,.35); padding: 8px 14px; border-left: 3px solid #6ec8ff; display: none; }
 .mate-row { font-size: 11px; letter-spacing: 1px; margin: 3px 0; }
 .mate-row .bar { height: 5px; margin-top: 2px; }
@@ -133,6 +135,13 @@ button.secondary { background: #3a3628; color: #e8e4d8; }
 .controls { flex: 1; display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px 16px; font-size: 12px; color: #bdb7a4; }
 
 .panel { background: rgba(20,20,14,.92); border: 1px solid #4a4636; padding: 36px 48px; text-align: center; display: flex; flex-direction: column; gap: 14px; min-width: 360px; }
+.shop-panel { width: min(560px, 94vw); text-align: left; max-height: 88vh; overflow: auto; }
+.shop-panel h2 { text-align: center; font-size: 42px; letter-spacing: 4px; }
+#shop-points { text-align: center; color: #f2d98a; letter-spacing: 3px; font-weight: 700; }
+.shop-row { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 8px 0; border-bottom: 1px solid #333; }
+.shop-row b { letter-spacing: 1px; }
+.shop-row small { display: block; color: #aaa; font-size: 12px; font-weight: 400; letter-spacing: 0; margin-top: 2px; }
+.shop-row button { font-size: 14px; letter-spacing: 1px; padding: 8px 14px; min-width: 88px; }
 .panel h2 { font-size: 40px; letter-spacing: 8px; }
 #go-title { color: #ff5a4e; }
 .credits-panel { max-width: min(760px, 94vw); max-height: 90vh; }

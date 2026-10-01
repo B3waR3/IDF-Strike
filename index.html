@@ -27,11 +27,12 @@
 
     <div id="score-box">
       <div>KILLS <b id="kills">0</b></div>
-      <div>SCORE <b id="score">0</b></div>
+      <div>POINTS <b id="score">0</b></div>
       <div>HOSTILES <b id="hostiles">0</b></div>
     </div>
 
     <div id="killfeed"></div>
+    <div id="match-log"></div>
     <div id="squad"></div>
     <div id="mount"></div>
     <div id="nade-timer"><small>FRAG LIVE</small><b>4.0</b></div>
@@ -108,10 +109,20 @@
           <div><kbd>V</kbd> Third person</div>
           <div><kbd>G</kbd> Frag grenade · tap to throw, hold to cook (4 s fuse)</div>
           <div><kbd>H</kbd> Use IFAK</div>
-          <div><kbd>F</kbd> Resupply at Merkava</div>
+          <div><kbd>F</kbd> Shekem shop, by the Merkava</div>
           <div><kbd>Esc</kbd> Pause</div>
         </div>
       </div>
+    </div>
+  </div>
+
+  <div id="shop" class="screen hidden">
+    <div class="panel shop-panel">
+      <h2>שק״ם</h2>
+      <p class="subtitle">SHEKEM</p>
+      <p id="shop-points">POINTS  0</p>
+      <div id="shop-list"></div>
+      <button id="shop-close" class="secondary" type="button">CLOSE</button>
     </div>
   </div>
 
