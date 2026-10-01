@@ -85,30 +85,30 @@ const CLASSES = [
   {
     id: 'rifleman', name: 'RIFLEMAN', unit: 'Givati Brigade · 84th Infantry',
     desc: 'Balanced frontline infantry. Reliable bullpup rifle and full protection.',
-    primary: 'tavor', secondary: 'glock', armor: 100, speed: 1.0, frags: 2, ifaks: 3,
-    gear: ['Ceramic plate carrier (NIJ Level IV)', 'Rabintex RBH-303 ballistic helmet', 'Reflex sight + suppressor', '2× M67 frag grenades', '3× IFAK (Israeli bandage, CAT tourniquet)'],
+    primary: 'tavor', secondary: 'glock', armor: 150, speed: 1.0, frags: 2, ifaks: 3,
+    gear: ['Plate carrier (NIJ Level IV)', 'Rabintex RBH-303 ballistic helmet', 'Reflex sight + suppressor', '2× M67 frag grenades', '3× IFAK (Israeli bandage, CAT tourniquet)'],
     stats: { armor: 0.7, mobility: 0.6, firepower: 0.65 },
   },
   {
     id: 'assault', name: 'ASSAULT', unit: 'Egoz Commando Unit · 89th',
     desc: 'Fast-moving commando. Light armor, extra grenades for clearing rooms.',
-    primary: 'm4', secondary: 'jericho', armor: 75, speed: 1.12, frags: 4, ifaks: 2,
-    gear: ['Low-profile plate carrier (Level III+)', 'High-cut helmet w/ NVG shroud', 'EOTech sight + vertical grip', '4× M67 frag grenades', '2× IFAK'],
-    stats: { armor: 0.5, mobility: 0.9, firepower: 0.6 },
+    primary: 'm4', secondary: 'jericho', armor: 150, speed: 1.12, frags: 4, ifaks: 2,
+    gear: ['Plate carrier (NIJ Level IV)', 'High-cut helmet w/ NVG shroud', 'EOTech sight + vertical grip', '4× M67 frag grenades', '2× IFAK'],
+    stats: { armor: 0.7, mobility: 0.9, firepower: 0.6 },
   },
   {
     id: 'support', name: 'MACHINE GUNNER', unit: 'Golani Brigade · 1st Infantry',
     desc: 'Heavy weapons. Suppress with 100-round belts. Slow but durable.',
-    primary: 'negev', secondary: 'glock', armor: 130, speed: 0.88, frags: 1, ifaks: 3,
-    gear: ['Heavy plate carrier w/ side plates', 'Rabintex RBH-303 ballistic helmet', 'Folding bipod', '1× M67 frag grenade', '3× IFAK', '100-rd belt pouches'],
-    stats: { armor: 0.95, mobility: 0.35, firepower: 0.95 },
+    primary: 'negev', secondary: 'glock', armor: 150, speed: 0.88, frags: 1, ifaks: 3,
+    gear: ['Plate carrier (NIJ Level IV)', 'Rabintex RBH-303 ballistic helmet', 'Folding bipod', '1× M67 frag grenade', '3× IFAK', '100-rd belt pouches'],
+    stats: { armor: 0.7, mobility: 0.35, firepower: 0.95 },
   },
   {
     id: 'marksman', name: 'MARKSMAN', unit: 'Paratroopers Brigade · 35th',
     desc: 'Long-range precision. One-shot kills, but vulnerable up close.',
-    primary: 'm24', secondary: 'jericho', armor: 60, speed: 1.0, frags: 1, ifaks: 2,
-    gear: ['Light plate carrier (Level III)', 'Rabintex RBH-303 ballistic helmet', 'Leupold Mark 4 10× scope', 'Laser rangefinder', '1× M67 frag grenade', '2× IFAK'],
-    stats: { armor: 0.4, mobility: 0.6, firepower: 0.8 },
+    primary: 'm24', secondary: 'jericho', armor: 150, speed: 1.0, frags: 1, ifaks: 2,
+    gear: ['Plate carrier (NIJ Level IV)', 'Rabintex RBH-303 ballistic helmet', 'Leupold Mark 4 10× scope', 'Laser rangefinder', '1× M67 frag grenade', '2× IFAK'],
+    stats: { armor: 0.7, mobility: 0.6, firepower: 0.8 },
   },
 ];
 
@@ -189,7 +189,10 @@ function applyFit() {
     if (w < 8 || h < 8) return;
     const fitW = (innerWidth - pad) / w;
     const fitH = (innerHeight - pad) / h;
-    const scaled = Math.min(fitW * ui, fitH * ui, fitW, fitH);
+    const enlarge = box.classList.contains('menu-inner') || box.classList.contains('load-inner');
+    let scaled = Math.min(fitW, fitH) * ui;
+    if (!enlarge) scaled = Math.min(scaled, ui);
+    scaled = Math.min(scaled, fitW, fitH);
     let slot = box.parentElement;
     if (!slot.classList.contains('fit-slot')) {
       slot = document.createElement('div');
@@ -1717,8 +1720,9 @@ function consoleCommand(line) {
     return `God ${S.god ? 'on' : 'off'}.`;
   }
   if (cmd === 'hp' || cmd === 'armor') {
+    const cap = cmd === 'hp' ? 100 : Math.max(150, player.armorMax);
     const n = Math.round(Number(arg));
-    if (!Number.isFinite(n) || n < 0 || n > 100) return `Usage: ${cmd} <0-100>`;
+    if (!Number.isFinite(n) || n < 0 || n > cap) return `Usage: ${cmd} <0-${cap}>`;
     if (cmd === 'hp') player.hp = n;
     else { player.armorMax = Math.max(player.armorMax, n); player.armor = n; }
     if (cmd === 'hp' && n > 0 && S.state === 'dead') netRevive();
