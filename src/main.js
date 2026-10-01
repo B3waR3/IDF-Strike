@@ -258,6 +258,7 @@ const S = {
 };
 // Third-person body; created once the models have loaded.
 let body = null;
+let seller = null;
 // True while the over-the-shoulder camera is in use (scoped ADS drops back to first person).
 const tpActive = () => S.tpK > 0.5;
 const keys = {};
@@ -1863,6 +1864,14 @@ function updateWeapon(dt) {
 }
 
 const tpOff = V();
+function updateSeller(dt) {
+  if (!seller) return;
+  seller.update(dt, {
+    speed: 0, back: false, pitch: -0.28, crouch: false, sprint: false, ads: 0,
+    reloadP: -1, empty: false, kick: 0, switchK: 0, nade: null,
+    knife: false, stab: -1, prone: false, inspect: -1, ifak: -1,
+  });
+}
 function updateBody(dt) {
   const dead = S.state === 'dead';
   // Hidden in first person, and when the camera is squeezed right up against the head.
@@ -2112,6 +2121,7 @@ function frame(dt) {
     updateLights(dt);
     updateEffects(dt, S.time, camera.position);
   }
+  updateSeller(dt);
   updateSun(S.state === 'menu' ? V(camera.position.x * 0.4, 0, camera.position.z * 0.4) : player.pos);
   SFX.setListener(camera.position, player.yaw);
   SFX.updateAudio(dt, S.state === 'playing');
@@ -2322,6 +2332,14 @@ async function boot() {
   body = createPlayerBody();
   body.setWeapon('tavor');
   scene.add(body.root);
+  if (world.sellerPos) {
+    seller = createPlayerBody();
+    seller.setWeapon('tavor');
+    seller.root.position.copy(world.sellerPos);
+    seller.root.rotation.y = world.sellerFace || Math.PI;
+    seller.root.userData.god = true;
+    scene.add(seller.root);
+  }
   renderer.compile(scene, camera);
   scene.remove(warm.root);
   warm.dispose();

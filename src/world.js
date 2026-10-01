@@ -650,33 +650,88 @@ function shekemSign() {
   return sign;
 }
 function shekem(scene, x, z) {
-  const wood = new THREE.MeshStandardMaterial({ color: 0x6a5132, roughness: 0.82 });
-  const cloth = new THREE.MeshStandardMaterial({ color: 0x3c4a30, roughness: 0.92 });
-  const metal = new THREE.MeshStandardMaterial({ color: 0x8d9288, roughness: 0.4, metalness: 0.45 });
+  const wood = M.wood;
+  const cloth = new THREE.MeshStandardMaterial({ color: 0x3d4f32, roughness: 0.9 });
+  const cloth2 = new THREE.MeshStandardMaterial({ color: 0x2c3a24, roughness: 0.92 });
+  const metal = M.steel;
+  const olive = new THREE.MeshStandardMaterial({ color: 0x4d5534, roughness: 0.75 });
+  const glass = new THREE.MeshStandardMaterial({ color: 0xd5ddd4, roughness: 0.06, metalness: 0.05, transparent: true, opacity: 0.35, depthWrite: false });
+  const juice = new THREE.MeshStandardMaterial({ color: 0xc4552a, roughness: 0.4 });
+  const soda = new THREE.MeshStandardMaterial({ color: 0x1a4a34, roughness: 0.35, metalness: 0.1 });
+  const tin = new THREE.MeshStandardMaterial({ color: 0xc5c8bc, roughness: 0.35, metalness: 0.55 });
+  const g = new THREE.Group();
   const box = (w, h, d, mat, px, py, pz) => {
     const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
     m.position.set(px, py, pz);
     m.castShadow = m.receiveShadow = true;
     return m;
   };
-  const g = new THREE.Group();
-  g.add(box(2.4, 1.02, 0.72, wood, 0, 0.51, 0));
-  g.add(box(2.5, 0.07, 0.84, metal, 0, 1.05, 0));
-  g.add(box(0.08, 1.15, 0.08, metal, -1.15, 1.62, 0.55));
-  g.add(box(0.08, 1.15, 0.08, metal, 1.15, 1.62, 0.55));
-  const awning = box(2.6, 0.08, 1.35, cloth, 0, 2.16, 0.28);
-  g.add(awning);
-  g.add(box(0.45, 0.28, 0.35, M.crate, -0.7, 1.24, 0));
-  g.add(box(0.32, 0.22, 0.28, M.crate, 0.15, 1.2, 0.05));
-  g.add(box(0.22, 0.34, 0.22, metal, 0.7, 1.26, -0.05));
-  g.add(shekemSign());
+  const pole = (px, pz) => {
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.04, 2.15, 8), metal);
+    m.position.set(px, 1.08, pz);
+    m.castShadow = true;
+    return m;
+  };
+  // Counter: legs, planked top, olive front, lower shelf.
+  g.add(pole(-1.15, 0.28), pole(1.15, 0.28), pole(-1.15, -0.28), pole(1.15, -0.28));
+  g.add(box(2.45, 0.06, 0.78, wood, 0, 1.02, 0));
+  g.add(box(2.35, 0.04, 0.7, metal, 0, 0.98, 0));
+  g.add(box(2.3, 0.72, 0.06, olive, 0, 0.58, 0.32));
+  g.add(box(2.2, 0.05, 0.62, wood, 0, 0.28, -0.02));
+  g.add(box(0.42, 0.22, 0.32, M.crate, -0.75, 0.42, -0.02));
+  g.add(box(0.36, 0.18, 0.28, M.crate, 0.55, 0.4, 0));
+  // Sagging canvas roof on a tube frame.
+  for (let i = 0; i < 6; i++) {
+    const t = i / 5;
+    const panel = new THREE.Mesh(new THREE.BoxGeometry(2.55, 0.02, 0.28), i % 2 ? cloth : cloth2);
+    panel.position.set(0, 2.18 - Math.sin(t * Math.PI) * 0.07, -0.2 + t * 1.15);
+    panel.rotation.x = (0.5 - t) * 0.22;
+    panel.castShadow = true;
+    g.add(panel);
+  }
+  g.add(box(2.6, 0.04, 0.08, metal, 0, 2.2, -0.22));
+  g.add(box(2.6, 0.04, 0.08, metal, 0, 2.12, 0.95));
+  const hem = box(2.55, 0.12, 0.04, new THREE.MeshStandardMaterial({ color: 0xf2f0e6, roughness: 0.8 }), 0, 2.02, 1.02);
+  g.add(hem);
+  // Glass sneeze guard and goods on the counter.
+  const guard = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.28, 0.015), glass);
+  guard.position.set(0, 1.2, 0.28);
+  g.add(guard);
+  const bottle = (mat, px, pz) => {
+    const b = new THREE.Group();
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.046, 0.2, 8), mat);
+    const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.02, 0.055, 8), mat);
+    neck.position.y = 0.12;
+    const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.02, 8), metal);
+    cap.position.y = 0.155;
+    b.add(body, neck, cap);
+    b.position.set(px, 1.16, pz);
+    b.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+    return b;
+  };
+  const can = (px, pz, h = 0.12) => {
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(0.038, 0.038, h, 10), tin);
+    m.position.set(px, 1.05 + h / 2, pz);
+    m.castShadow = true;
+    return m;
+  };
+  g.add(bottle(juice, -0.85, 0.05), bottle(soda, -0.72, -0.08), bottle(juice, -0.6, 0.08));
+  g.add(can(-0.2, 0.02), can(-0.1, -0.06, 0.1), can(0.0, 0.05), can(0.1, -0.02, 0.11));
+  g.add(box(0.38, 0.16, 0.24, M.crate, 0.55, 1.13, -0.05));
+  g.add(box(0.28, 0.2, 0.2, olive, 0.92, 1.15, 0.02));
+  const sign = shekemSign();
+  sign.position.set(0, 1.85, 1.05);
+  g.add(sign);
   g.position.set(x, 0, z);
   // Front of the stall faces the fight, so the sign is readable on the walk back to the Merkava.
   g.rotation.y = Math.PI;
   scene.add(g);
-  colliderBox(x, z, 2.5, 0.9, 0, 1.1, 'metal', 'c');
-  world.shekemPos = new THREE.Vector3(x, 0, z - 1.9);
+  colliderBox(x, z, 2.5, 0.85, 0, 1.08, 'wood', 'c');
+  world.shekemPos = new THREE.Vector3(x, 0, z - 1.75);
   world.resupplyPos = world.shekemPos;
+  // Behind the counter, facing the customers.
+  world.sellerPos = new THREE.Vector3(x, 0, z + 0.95);
+  world.sellerFace = Math.PI;
 }
 function merkava(scene, x, z) {
   const { root } = makeProp('merkava');
