@@ -630,10 +630,10 @@ function shekem(scene, x, z) {
   scene.add(root);
   const w = Math.max(size.x, 1.2), d = Math.max(size.z, 0.6);
   colliderBox(x, z, w * 0.92, d * 0.75, 0, 1.1, 'wood', 'c');
-  // Customers stand on the +Z side, toward the Merkava. The seller is behind the counter.
+  // Customers stand on the +Z side, in the street. The seller stands inside the stall, in front of the back wall.
   world.shekemPos = new THREE.Vector3(x, 0, z + d * 0.5 + 1.15);
   world.resupplyPos = world.shekemPos;
-  world.sellerPos = new THREE.Vector3(x, 0, z - d * 0.5 - 0.2);
+  world.sellerPos = new THREE.Vector3(x, 0, z - d * 0.18);
   world.sellerFace = 0;
 }
 function merkava(scene, x, z) {
@@ -793,7 +793,7 @@ export function buildWorld(sc) {
   }
 
   merkava(scene, -9, 107);
-  shekem(scene, -3.4, 101.2);
+  shekem(scene, -3.6, 105.2);
   sandbagWall(4, 99.5, false, 3.2);
   sandbagWall(-1, 98.8, false, 2.6);
 
