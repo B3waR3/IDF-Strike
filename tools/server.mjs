@@ -17,19 +17,24 @@ function lanIps() {
 }
 
 const HELP = [
-  'help                  show these commands',
-  'status                wave, points, health',
-  'players               who has joined',
-  'wave <n>              start that wave',
-  'points <n>            set your points',
-  'points +<n>           add points',
-  'god                   toggle damage immunity',
-  'hp <n>                set health',
-  'armor <n>             set armor',
-  'spawn <type> [count]  hamas, pij, rpg, or sniper, in front of you',
-  'clear                 remove every hostile',
-  'kick <name>           drop a player',
-  'say <text>            message everyone',
+  'help                         show these commands',
+  'status                       wave, points, health',
+  'players                      who has joined',
+  'Add a player name, or all, at the end to affect someone else.',
+  'god [on|off] [name|all]      damage immunity',
+  'noclip [on|off] [name|all]   walk through walls. Space up, Ctrl down',
+  'wallhack [on|off] [name|all] see hostiles through walls',
+  'points <n> [name|all]        set points. points +<n> adds',
+  'hp <n> [name|all]            set health',
+  'armor <n> [name|all]         set armor',
+  'give <weapon> [name|all]     tavor, m4, negev, m24, sniper, g28, glock, jericho, karambit',
+  'freeze                       stop waves and hostiles',
+  'unfreeze                     continue the fight',
+  'wave <n>                     start that wave',
+  'spawn <type> [count]         hamas, pij, rpg, or sniper, in front of you',
+  'clear                        remove every hostile',
+  'kick <name>                  drop a player',
+  'say <text>                   message everyone',
 ].join('\n');
 
 let mission = null;

@@ -75,7 +75,7 @@ export function createNet(hooks) {
       id, name: 'Soldier', ready: false, cls: 'rifleman',
       x: 0, y: 0, z: 0, yaw: 0, pitch: 0, vx: 0, vz: 0,
       crouch: false, prone: false, sprint: false, ads: 0, eye: 1.65, weapon: 'tavor',
-      hp: 100, armor: 100, armorMax: 100, alive: false, seenAt: 0,
+      hp: 100, armor: 100, armorMax: 100, alive: false, seenAt: 0, god: false, noclip: false, wallhack: false,
     };
   }
 
@@ -441,6 +441,7 @@ export function createNet(hooks) {
     }
     else if (m.t === 'feed') hooks.killLine(m.id === myId ? 'You' : (m.name || 'Ally'), m.weapon || 'Weapon', m.enemy || 'Militant', !!m.head);
     else if (m.t === 'notice' && m.text) hooks.notice(m.text);
+    else if (m.t === 'grant' && hooks.grant) hooks.grant(m);
     else if (m.t === 'full') { status('That mission is full (4 players).'); stop(); }
     else if (m.t === 'closed') { if (role === 'client') { status('Lost the host.'); hooks.disconnected(); role = null; } }
     else if (m.t === 'menu') { live = false; cls = null; clearWorld(); hooks.backToMenu(); }
@@ -529,9 +530,30 @@ export function createNet(hooks) {
     ready(next) { cls = next; send({ t: 'ready', cls: next.id, armor: next.armor, name: myName }); },
     sendPoseBurst() { if (role === 'client' && hooks.getState().state === 'playing') send(myPose()); },
     send(data, to) { send(data, to); },
+    peerByName(name) {
+      const n = String(name || '').toLowerCase();
+      if (!n || n === 'me' || n === 'all') return null;
+      for (const p of peers.values()) if ((p.name || '').toLowerCase() === n) return p;
+      return null;
+    },
+    listPeers() { return [...peers.values()]; },
+    eachFoe(fn) { for (const f of foes.values()) fn(f.ch.root); },
+    grantPeer(id, grant) {
+      const p = peers.get(id);
+      if (!p) return;
+      if (typeof grant.god === 'boolean') p.god = grant.god;
+      if (typeof grant.noclip === 'boolean') p.noclip = grant.noclip;
+      if (typeof grant.wallhack === 'boolean') p.wallhack = grant.wallhack;
+      if (grant.hp != null) { p.hp = grant.hp; if (grant.hp > 0) p.alive = true; }
+      if (grant.armor != null) {
+        p.armorMax = Math.max(p.armorMax || 0, grant.armorMax || grant.armor);
+        p.armor = grant.armor;
+      }
+      send({ t: 'grant', ...grant }, id);
+    },
     hurt(id, amount, _from, explosive) {
       const p = peers.get(id);
-      if (!p || !p.alive) return;
+      if (!p || !p.alive || p.god) return;
       let a = amount;
       if (p.armor > 0) {
         const taken = Math.min(p.armor, a * (explosive ? 0.45 : 0.65));

@@ -10,9 +10,18 @@ export const mapRects = [];
 export const shafts = [];
 export const world = { resupplyPos: null, shekemPos: null, tankPos: null, spawn: new THREE.Vector3(4, 0, 106) };
 
-const rand = (a, b) => a + Math.random() * (b - a);
+// One seed so every computer builds the same streets and buildings. Shot rolls stay on Math.random.
+const MAP_SEED = 0x1DF5713E;
+let rngState = MAP_SEED;
+function rnd() {
+  rngState = (rngState + 0x6D2B79F5) | 0;
+  let t = Math.imul(rngState ^ (rngState >>> 15), 1 | rngState);
+  t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+}
+const rand = (a, b) => a + rnd() * (b - a);
 const randInt = (a, b) => Math.floor(rand(a, b + 1));
-const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+const pick = (arr) => arr[Math.floor(rnd() * arr.length)];
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 
 // ============================================================
@@ -148,10 +157,10 @@ function frondTexture() {
       const t = 1 - y / h;
       const len = (w / 2 - 4) * Math.sin(Math.PI * Math.min(1, t * 1.1 + 0.05));
       for (const s of [-1, 1]) {
-        const g = 70 + Math.random() * 40;
+        const g = 70 + rnd() * 40;
         x.strokeStyle = `rgb(${g * 0.75 | 0},${g + 20 | 0},${g * 0.4 | 0})`;
         x.lineWidth = 3;
-        x.beginPath(); x.moveTo(w / 2, y); x.quadraticCurveTo(w / 2 + s * len * 0.6, y - 14, w / 2 + s * len, y - 26 - Math.random() * 6); x.stroke();
+        x.beginPath(); x.moveTo(w / 2, y); x.quadraticCurveTo(w / 2 + s * len * 0.6, y - 14, w / 2 + s * len, y - 26 - rnd() * 6); x.stroke();
       }
     }
   });
@@ -178,7 +187,7 @@ function driftTexture() {
     const g = x.createRadialGradient(w / 2, h / 2, 5, w / 2, h / 2, w / 2);
     g.addColorStop(0, '#fff'); g.addColorStop(0.5, '#aaa'); g.addColorStop(1, '#000');
     x.fillStyle = g; x.fillRect(0, 0, w, h);
-    for (let i = 0; i < 200; i++) { x.fillStyle = `rgba(0,0,0,${Math.random() * 0.3})`; x.beginPath(); x.arc(rand(0, w), rand(0, h), rand(2, 10), 0, 7); x.fill(); }
+    for (let i = 0; i < 200; i++) { x.fillStyle = `rgba(0,0,0,${rnd() * 0.3})`; x.beginPath(); x.arc(rand(0, w), rand(0, h), rand(2, 10), 0, 7); x.fill(); }
   }, false);
 }
 
@@ -349,7 +358,7 @@ function facade(cx, cz, w, d, f0, nf, damaged, tint) {
       for (let i = 0; i < cols; i++) {
         const u = -s.L / 2 + sp * (i + 0.5);
         if (f === 0) {
-          const r = Math.random(), sw = Math.min(2.6, sp - 0.6);
+          const r = rnd(), sw = Math.min(2.6, sp - 0.6);
           if (r < 0.55) {
             place(B.shutter, u, 1.35, 0.03, sw, 2.5, 0.06);
             place(B.trim, u, 2.7, 0.1, sw + 0.3, 0.22, 0.2, tint);
@@ -362,23 +371,23 @@ function facade(cx, cz, w, d, f0, nf, damaged, tint) {
           continue;
         }
         const pw = 1.25, ph = 1.45, wy = y0 + 1.6;
-        const r = Math.random();
+        const r = rnd();
         if ((damaged && r < 0.5) || r < 0.12) place(B.void, u, wy, 0.015, pw, ph, 0.03);
         else if (r < 0.32) place(B.shutter, u, wy, 0.03, pw, ph, 0.05);
-        else place(B.glass, u, wy, 0.015, pw, ph, 0.03, Math.random() < 0.5 ? 0xffffff : 0xb8c0c8);
+        else place(B.glass, u, wy, 0.015, pw, ph, 0.03, rnd() < 0.5 ? 0xffffff : 0xb8c0c8);
         place(B.trim, u - pw / 2 - 0.06, wy, 0.07, 0.12, ph + 0.24, 0.14, tint);
         place(B.trim, u + pw / 2 + 0.06, wy, 0.07, 0.12, ph + 0.24, 0.14, tint);
         place(B.trim, u, wy + ph / 2 + 0.06, 0.08, pw + 0.24, 0.12, 0.16, tint);
         place(B.trim, u, wy - ph / 2 - 0.05, 0.12, pw + 0.4, 0.08, 0.24, tint);
-        if (!damaged && Math.random() < 0.15 && sp > 2.6) {
+        if (!damaged && rnd() < 0.15 && sp > 2.6) {
           const bw = sp * 0.8;
           place(B.trim, u, y0 + 0.08, 0.6, bw, 0.16, 1.2, tint);
           place(B.trim, u, y0 + 0.66, 1.15, bw, 1.0, 0.1, tint);
           place(B.trim, u - bw / 2 + 0.05, y0 + 0.66, 0.6, 0.1, 1.0, 1.1, tint);
           place(B.trim, u + bw / 2 - 0.05, y0 + 0.66, 0.6, 0.1, 1.0, 1.1, tint);
         }
-        if (Math.random() < 0.1 && sp > 2.8) place(B.ac, u + pw / 2 + 0.62, wy - 0.3, 0.18, 0.75, 0.5, 0.3);
-        if ((damaged && Math.random() < 0.35) || Math.random() < 0.04) place(B.soot, u, wy + 1.1, 0.02, rand(1.6, 2.2), rand(2.2, 3), 1);
+        if (rnd() < 0.1 && sp > 2.8) place(B.ac, u + pw / 2 + 0.62, wy - 0.3, 0.18, 0.75, 0.5, 0.3);
+        if ((damaged && rnd() < 0.35) || rnd() < 0.04) place(B.soot, u, wy + 1.1, 0.02, rand(1.6, 2.2), rand(2.2, 3), 1);
       }
     }
     if (damaged) {
@@ -401,16 +410,16 @@ function roof(cx, cz, w, d, h, damaged, tint) {
   const n = randInt(0, 4);
   const tx = cx + rand(-w / 3, w / 3), tz = cz + rand(-d / 3, d / 3);
   for (let i = 0; i < n; i++) B.waterTank.add(tx + (i % 2) * 1.3, h, tz + Math.floor(i / 2) * 1.3, 0.55, 1.15, 0.55);
-  if (Math.random() < 0.45) {
+  if (rnd() < 0.45) {
     const sx = cx + rand(-w / 4, w / 4), sz = cz + rand(-d / 4, d / 4);
     B.solar.add(sx, h + 0.7, sz, 1.0, 0.05, 1.9, 0, null, -0.7);
     B.whiteTank.add(sx, h + 1.25, sz - 0.7, 0.3, 1.1, 0.3, 0, null, 0, Math.PI / 2);
   }
-  if (Math.random() < 0.5) {
+  if (rnd() < 0.5) {
     const hx = cx + rand(-w / 4, w / 4), hz = cz + rand(-d / 4, d / 4);
     B.trim.add(hx, h + 1.2, hz, 2.6, 2.4, 2.8, 0, tint);
   }
-  if (Math.random() < 0.4) {
+  if (rnd() < 0.4) {
     for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
       const px = cx + sx * (w / 2 - 0.4), pz = cz + sz * (d / 2 - 0.4);
       for (let k = 0; k < 4; k++) B.rebar.add(px + (k % 2) * 0.15, h, pz + (k >> 1) * 0.15, 0.012, rand(1, 1.6), 0.012, 0, null, rand(-0.1, 0.1), rand(-0.1, 0.1));
@@ -436,7 +445,7 @@ function building(cx, cz, w, d, floors, damaged) {
   facade(cx, cz, w, d, 0, keep, true, tint);
   roof(cx, cz, w, d, keep * 3, true, tint);
 
-  const alongX = Math.random() < 0.5, side = Math.random() < 0.5 ? -1 : 1;
+  const alongX = rnd() < 0.5, side = rnd() < 0.5 ? -1 : 1;
   let ux = cx, uz = cz, uw = w, ud = d;
   if (alongX) { uw = w * rand(0.4, 0.6); ux = cx + side * (w - uw) / 2; } else { ud = d * rand(0.4, 0.6); uz = cz + side * (d - ud) / 2; }
   const upF = floors - keep;
@@ -533,7 +542,7 @@ function burntCar(scene, x, z, rotated) {
   const cab = new THREE.Mesh(carCabinGeo, M.burnt); cab.castShadow = cab.receiveShadow = true;
   const gl = new THREE.Mesh(carGlassGeo, M.void);
   g.add(body, cab, gl);
-  const ry = (rotated ? Math.PI / 2 : 0) + rand(-0.12, 0.12) + (Math.random() < 0.5 ? Math.PI : 0);
+  const ry = (rotated ? Math.PI / 2 : 0) + rand(-0.12, 0.12) + (rnd() < 0.5 ? Math.PI : 0);
   g.position.set(x, -0.12, z);
   g.rotation.set(rand(-0.03, 0.03), ry, rand(-0.05, 0.05));
   scene.add(g);
@@ -543,12 +552,12 @@ function burntCar(scene, x, z, rotated) {
   }
   const w = rotated ? 4.4 : 1.8, d = rotated ? 1.8 : 4.4;
   colliderBox(x, z, w, d, 0, 1.3, 'metal', 'c');
-  if (Math.random() < 0.25) addSmokePlume(new THREE.Vector3(x, 0.6, z), 0.3, true);
+  if (rnd() < 0.25) addSmokePlume(new THREE.Vector3(x, 0.6, z), 0.3, true);
 }
 
 function technical(scene, x, z, rotated) {
   const { root, size } = makeProp('pickup');
-  root.rotation.y = (rotated ? Math.PI / 2 : 0) + rand(-0.1, 0.1) + (Math.random() < 0.5 ? Math.PI : 0);
+  root.rotation.y = (rotated ? Math.PI / 2 : 0) + rand(-0.1, 0.1) + (rnd() < 0.5 ? Math.PI : 0);
   root.position.set(x, 0, z);
   scene.add(root);
   const w = rotated ? size.z : size.x, d = rotated ? size.x : size.z;
@@ -601,14 +610,14 @@ function electricLine(scene, x0, z0, x1, z1) {
   for (let i = 0; i <= n; i++) {
     const x = x0 + dx * i, z = z0 + dz * i;
     if (Math.abs(x) > HALF - 3 || Math.abs(z) > HALF - 3) continue;
-    const tilt = Math.random() < 0.15 ? rand(0.1, 0.3) : 0;
+    const tilt = rnd() < 0.15 ? rand(0.1, 0.3) : 0;
     B.pole.add(x, 0, z, 1, 8.5, 1, 0, null, tilt * perpZ, -tilt * perpX);
     B.crossarm.add(x, 8.1, z, Math.abs(perpX) * 1.6 + 0.08, 0.08, Math.abs(perpZ) * 1.6 + 0.08);
     colliderBox(x, z, 0.35, 0.35, 0, 8.5, 'concrete', null);
     tops.push(new THREE.Vector3(x, 8.15, z));
   }
   for (let i = 0; i < tops.length - 1; i++) {
-    if (Math.random() < 0.12) continue;
+    if (rnd() < 0.12) continue;
     for (const off of [-0.7, 0, 0.7]) {
       const a = tops[i].clone().add(new THREE.Vector3(perpX * off, 0, perpZ * off));
       const b = tops[i + 1].clone().add(new THREE.Vector3(perpX * off, 0, perpZ * off));
@@ -651,6 +660,7 @@ function merkava(scene, x, z) {
 // ============================================================
 let scene = null;
 export function buildWorld(sc) {
+  rngState = MAP_SEED;
   scene = sc;
   makeMaterials();
   makeBatches();
@@ -670,7 +680,7 @@ export function buildWorld(sc) {
   }
   for (let i = 0; i < 90; i++) {
     const line = randInt(0, N), c = (line - N / 2) * CELL + rand(-3.5, 3.5), along = rand(-HALF, HALF), s = rand(2, 6);
-    if (Math.random() < 0.5) B.drift.add(c, 0.02, along, s, s * rand(1, 2.5), 1, rand(0, 6), null, -Math.PI / 2, 0, 'YXZ');
+    if (rnd() < 0.5) B.drift.add(c, 0.02, along, s, s * rand(1, 2.5), 1, rand(0, 6), null, -Math.PI / 2, 0, 'YXZ');
     else B.drift.add(along, 0.02, c, s * rand(1, 2.5), s, 1, rand(0, 6), null, -Math.PI / 2, 0, 'YXZ');
   }
 
@@ -679,7 +689,7 @@ export function buildWorld(sc) {
       const cx = (bi - 3) * CELL, cz = (bj - 3) * CELL;
       B.pads.add(cx, 0, cz, BLOCK, PAD, BLOCK);
       addCollider(cx - BLOCK / 2, cx + BLOCK / 2, cz - BLOCK / 2, cz + BLOCK / 2, 0, PAD, 'concrete');
-      const r = Math.random();
+      const r = rnd();
       if (bi === 3 && bj === 3) {
         tunnelShaft(cx, cz, PAD);
         rubblePile(cx + 6, cz - 5, 2.5, PAD);
@@ -698,17 +708,17 @@ export function buildWorld(sc) {
         B.slab.add(wx2, PAD + wh2 / 2, wz2, 0.35, wh2, ww2);
         colliderBox(wx2, wz2, 0.35, ww2, 0, PAD + wh2, 'concrete', 'c');
         if (bj < 5) tunnelShaft(cx + rand(-3, 3), cz + rand(-3, 3), PAD);
-        if (Math.random() < 0.5) palm(cx + rand(-8, 8), cz + rand(-8, 8));
+        if (rnd() < 0.5) palm(cx + rand(-8, 8), cz + rand(-8, 8));
         continue;
       }
-      const split = Math.random();
-      const dmg = () => Math.random() < 0.32;
+      const split = rnd();
+      const dmg = () => rnd() < 0.32;
       const fl = () => randInt(2, 6);
       if (split < 0.3) {
         building(cx, cz, rand(14, BLOCK - 1), rand(14, BLOCK - 1), fl(), dmg());
       } else if (split < 0.6) {
         const hw = (BLOCK - 2) / 2;
-        if (Math.random() < 0.5) {
+        if (rnd() < 0.5) {
           building(cx - hw / 2 - 0.75, cz, hw - 0.5, rand(14, BLOCK - 1), fl(), dmg());
           building(cx + hw / 2 + 0.75, cz, hw - 0.5, rand(14, BLOCK - 1), fl(), dmg());
         } else {
@@ -719,7 +729,7 @@ export function buildWorld(sc) {
         const q = (BLOCK - 2.5) / 2;
         for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
           const px = cx + sx * (q / 2 + 0.9), pz = cz + sz * (q / 2 + 0.9);
-          if (Math.random() < 0.15) { rubblePile(px, pz, 2.5, PAD); continue; }
+          if (rnd() < 0.15) { rubblePile(px, pz, 2.5, PAD); continue; }
           building(px, pz, q * rand(0.8, 0.95), q * rand(0.8, 0.95), fl(), dmg());
         }
       }
@@ -738,14 +748,14 @@ export function buildWorld(sc) {
     const line = randInt(0, N);
     const c = (line - N / 2) * CELL;
     const along = rand(-HALF + 6, HALF - 6);
-    const vertical = Math.random() < 0.5;
+    const vertical = rnd() < 0.5;
     const off = rand(-2.3, 2.3);
     const x = vertical ? c + off : along, z = vertical ? along : c + off;
     if (Math.abs(x) > HALF - 4 || Math.abs(z) > HALF - 4) continue;
     if (Math.hypot(x - spawn.x, z - spawn.z) < 16) continue;
     if (shafts.some((s) => Math.hypot(s.x - x, s.z - z) < 4)) continue;
     if (colliders.some((cc) => cc.top > 0.5 && x > cc.minX - 2 && x < cc.maxX + 2 && z > cc.minZ - 2 && z < cc.maxZ + 2)) continue;
-    const t = Math.random();
+    const t = rnd();
     if (t < 0.3) jersey(x, z, vertical);
     else if (t < 0.55) sandbagWall(x, z, vertical);
     else if (t < 0.7) burntCar(scene, x, z, vertical);
@@ -759,20 +769,20 @@ export function buildWorld(sc) {
   for (let i = 0; i < 40; i++) {
     const x = rand(-HALF, HALF), z = rand(-HALF, HALF);
     if (colliders.some((cc) => cc.top > 0.3 && x > cc.minX - 0.5 && x < cc.maxX + 0.5 && z > cc.minZ - 0.5 && z < cc.maxZ + 0.5)) continue;
-    if (Math.random() < 0.5) for (let k = 0; k < randInt(1, 4); k++) B.tire.add(x, 0.11 + k * 0.2, z, 1, 1, 1, rand(0, 3));
+    if (rnd() < 0.5) for (let k = 0; k < randInt(1, 4); k++) B.tire.add(x, 0.11 + k * 0.2, z, 1, 1, 1, rand(0, 3));
     else for (let k = 0; k < randInt(3, 8); k++) { const s = rand(0.1, 0.35); B.rock.add(x + rand(-1, 1), s * 0.3, z + rand(-1, 1), s, s * 0.6, s, rand(0, 6), 0xd0c8b8, rand(0, 6)); }
   }
   for (let i = 0; i < 16; i++) {
     const line = randInt(0, N);
-    const c = (line - N / 2) * CELL + (Math.random() < 0.5 ? -3.7 : 3.7);
+    const c = (line - N / 2) * CELL + (rnd() < 0.5 ? -3.7 : 3.7);
     const along = rand(-HALF + 8, HALF - 8);
-    const px = Math.random() < 0.5 ? c : along, pz = px === c ? along : c;
+    const px = rnd() < 0.5 ? c : along, pz = px === c ? along : c;
     if (Math.hypot(px - spawn.x, pz - spawn.z) < 10) continue;
     palm(px, pz);
   }
   for (let i = 0; i < 4; i++) {
     const line = randInt(1, N - 1), c = (line - N / 2) * CELL + 3.9;
-    if (Math.random() < 0.5) electricLine(scene, c, -HALF + 4, c, HALF - 4);
+    if (rnd() < 0.5) electricLine(scene, c, -HALF + 4, c, HALF - 4);
     else electricLine(scene, -HALF + 4, c, HALF - 4, c);
   }
 
@@ -805,7 +815,7 @@ export function buildWorld(sc) {
   let fires = 0;
   for (const c of colliders) {
     if (fires >= 2) break;
-    if (c.top > 8 && Math.random() < 0.08 && Math.hypot((c.minX + c.maxX) / 2 - spawn.x, (c.minZ + c.maxZ) / 2 - spawn.z) > 40) {
+    if (c.top > 8 && rnd() < 0.08 && Math.hypot((c.minX + c.maxX) / 2 - spawn.x, (c.minZ + c.maxZ) / 2 - spawn.z) > 40) {
       addSmokePlume(new THREE.Vector3((c.minX + c.maxX) / 2, c.top, (c.minZ + c.maxZ) / 2), 0.9, true);
       fires++;
     }

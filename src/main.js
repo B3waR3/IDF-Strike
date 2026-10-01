@@ -329,6 +329,7 @@ const player = {
 };
 const S = {
   state: 'loading', wave: 0, toSpawn: 0, spawnT: 0, intermission: 0, alive: 0, god: false,
+  noclip: false, wallhack: false, frozen: false,
   reloading: false, reloadT: 0, reloadDur: 0, switchT: 0, ifakT: 0, fireCD: 0, boltT: 0,
   adsT: 0, bloom: 0, kick: 0, nadeCD: 0, resupplyCD: 0, bobT: 0, shake: 0, sprintT: 0,
   breath: 4, swayT: 0, flashT: 0, hurtT: 0, flowT: 0, time: 0, msgT: 0, triggerFresh: false,
@@ -1205,6 +1206,7 @@ function openShop() {
 }
 function closeShop() {
   if (!shopOpen.on) return;
+  suppressPause = true;
   shopOpen.on = false;
   $('shop').classList.add('hidden');
   if (S.state === 'playing') canvas.requestPointerLock();
@@ -1542,7 +1544,7 @@ document.addEventListener('mousemove', (e) => {
 });
 document.addEventListener('pointerlockchange', () => {
   if (document.pointerLockElement === canvas) { suppressPause = false; return; }
-  if (suppressPause || shopOpen.on) return;
+  if (suppressPause || shopOpen.on) { suppressPause = false; return; }
   if (S.state === 'playing') pauseGame();
 });
 
@@ -1685,53 +1687,126 @@ function startWave() {
   S.spawnT = 1;
   flashMsg(`WAVE ${S.wave}\n<small>${S.toSpawn} militants inbound${S.wave === 2 ? ' — RPG gunners spotted' : S.wave === 3 ? ' — Watch for sniper glint' : ''}</small>`, 3);
 }
+function giveWeapon(id) {
+  const def = WEAPONS[id];
+  if (!def || !player.weapons.length) return false;
+  const slot = def.type === 'pistol' ? 1 : def.type === 'melee' ? 2 : 0;
+  discardWeapon(player.weapons[slot]);
+  player.weapons[slot] = makeWeapon(id);
+  player.cur = slot;
+  if (body) body.setWeapon(id);
+  return true;
+}
+function paintWall(root, on) {
+  if (!root) return;
+  root.traverse((o) => {
+    if (!o.isMesh) return;
+    if (on) {
+      if (!o.userData._mat) {
+        o.userData._mat = o.material;
+        const list = Array.isArray(o.material) ? o.material : [o.material];
+        const cloned = list.map((m) => { const c = m.clone(); c.depthTest = false; return c; });
+        o.material = Array.isArray(o.material) ? cloned : cloned[0];
+      }
+    } else if (o.userData._mat) {
+      o.material = o.userData._mat;
+      delete o.userData._mat;
+    }
+  });
+}
+function syncWallhack() {
+  for (const e of enemies) paintWall(e.ch.root, S.wallhack);
+  if (net && net.eachFoe) net.eachFoe((root) => paintWall(root, S.wallhack));
+}
+const GUN_ALIAS = { tavor: 'tavor', m4: 'm4', negev: 'negev', mag: 'negev', m24: 'm24', sniper: 'sniper', g28: 'g28', glock: 'glock', jericho: 'jericho', karambit: 'karambit', knife: 'karambit' };
+function applySelf(grant) {
+  const notes = [];
+  if (typeof grant.god === 'boolean') { S.god = grant.god; notes.push(`god ${S.god ? 'on' : 'off'}`); }
+  if (typeof grant.noclip === 'boolean') { S.noclip = grant.noclip; notes.push(`noclip ${S.noclip ? 'on' : 'off'}`); }
+  if (typeof grant.wallhack === 'boolean') { S.wallhack = grant.wallhack; notes.push(`wallhack ${S.wallhack ? 'on' : 'off'}`); }
+  if (grant.pointsAdd != null) { player.score = Math.max(0, player.score + grant.pointsAdd); notes.push(`points ${player.score}`); }
+  else if (grant.points != null) { player.score = Math.max(0, grant.points); notes.push(`points ${player.score}`); }
+  if (grant.hp != null) {
+    player.hp = grant.hp;
+    if (grant.hp > 0 && S.state === 'dead') netRevive();
+    notes.push(`hp ${grant.hp}`);
+  }
+  if (grant.armor != null) {
+    player.armorMax = Math.max(player.armorMax, grant.armorMax || grant.armor);
+    player.armor = grant.armor;
+    notes.push(`armor ${grant.armor}`);
+  }
+  if (grant.give) {
+    if (!giveWeapon(grant.give)) return 'Deploy into a mission first.';
+    notes.push(`gave ${grant.give}`);
+  }
+  return notes.join(', ') || 'Ok.';
+}
 function consoleCommand(line) {
-  const bits = String(line || '').trim().split(/\s+/);
-  const cmd = (bits[0] || '').toLowerCase();
-  const arg = bits.slice(1).join(' ');
+  const rawBits = String(line || '').trim().split(/\s+/).filter(Boolean);
+  const cmd = (rawBits[0] || '').toLowerCase();
+  let bits = rawBits.slice(1);
+  let who = null;
+  if (bits.length && net && net.peerByName) {
+    const last = bits[bits.length - 1];
+    const hit = last.toLowerCase() === 'all' ? 'all' : net.peerByName(last);
+    if (hit) { who = hit === 'all' ? 'all' : hit; bits = bits.slice(0, -1); }
+  }
+  const arg = bits.join(' ');
   const live = S.state === 'playing' || S.state === 'paused' || S.state === 'dead';
   if (cmd === 'status') {
     return [
-      `state ${S.state}`,
+      `state ${S.state}${S.frozen ? '  FROZEN' : ''}`,
       `wave ${S.wave}  hostiles ${S.alive + S.toSpawn}`,
       `points ${player.score}`,
-      `hp ${Math.ceil(player.hp)}  armor ${Math.ceil(player.armor)}`,
-      `god ${S.god ? 'on' : 'off'}`,
+      `hp ${Math.ceil(player.hp)}  armor ${Math.ceil(player.armor)}/${player.armorMax}`,
+      `god ${S.god ? 'on' : 'off'}  noclip ${S.noclip ? 'on' : 'off'}  wallhack ${S.wallhack ? 'on' : 'off'}`,
     ].join('\n');
   }
+  if (cmd === 'freeze' || cmd === 'stop') {
+    if (!live) return 'Deploy into a mission first.';
+    S.frozen = true;
+    return 'Game frozen. Waves and hostiles are stopped.';
+  }
+  if (cmd === 'unfreeze' || cmd === 'resume' || cmd === 'continue') {
+    S.frozen = false;
+    return 'Game resumed.';
+  }
   if (!live) return 'Deploy into a mission first.';
-  if (cmd === 'wave') {
+  const grant = {};
+  const flag = (key) => {
+    const word = (bits[0] || '').toLowerCase();
+    const cur = key === 'god' ? S.god : key === 'noclip' ? S.noclip : S.wallhack;
+    grant[key] = word === 'on' ? true : word === 'off' ? false : !cur;
+  };
+  if (cmd === 'god' || cmd === 'noclip' || cmd === 'wallhack') flag(cmd);
+  else if (cmd === 'points') {
+    if (!arg) return 'Usage: points <n> [name]   or   points +<n> [name]';
+    const n = Math.round(Number(arg));
+    if (!Number.isFinite(n)) return 'Usage: points <n> [name]   or   points +<n> [name]';
+    if (arg.startsWith('+') || arg.startsWith('-')) grant.pointsAdd = n;
+    else grant.points = n;
+  } else if (cmd === 'hp' || cmd === 'armor') {
+    const cap = cmd === 'hp' ? 100 : 999;
+    const n = Math.round(Number(bits[0]));
+    if (!Number.isFinite(n) || n < 0 || n > cap) return `Usage: ${cmd} <0-${cap}> [name]`;
+    grant[cmd] = n;
+    if (cmd === 'armor') grant.armorMax = n;
+  } else if (cmd === 'give' || cmd === 'weapon') {
+    const id = GUN_ALIAS[(bits[0] || '').toLowerCase()];
+    if (!id) return 'Usage: give <tavor|m4|negev|m24|sniper|g28|glock|jericho|karambit> [name]';
+    grant.give = id;
+  } else if (cmd === 'wave') {
     const n = Math.round(Number(arg));
     if (!Number.isFinite(n) || n < 1 || n > 50) return 'Usage: wave <1-50>';
     S.intermission = 0;
     S.wave = n - 1;
     startWave();
     return `Wave ${S.wave} started, ${S.toSpawn} hostiles.`;
-  }
-  if (cmd === 'points') {
-    const add = arg.startsWith('+') || arg.startsWith('-');
-    const n = Math.round(Number(arg));
-    if (!Number.isFinite(n)) return 'Usage: points <n>   or   points +<n>';
-    player.score = Math.max(0, add ? player.score + n : n);
-    return `Points ${player.score}.`;
-  }
-  if (cmd === 'god') {
-    S.god = !S.god;
-    return `God ${S.god ? 'on' : 'off'}.`;
-  }
-  if (cmd === 'hp' || cmd === 'armor') {
-    const cap = cmd === 'hp' ? 100 : Math.max(150, player.armorMax);
-    const n = Math.round(Number(arg));
-    if (!Number.isFinite(n) || n < 0 || n > cap) return `Usage: ${cmd} <0-${cap}>`;
-    if (cmd === 'hp') player.hp = n;
-    else { player.armorMax = Math.max(player.armorMax, n); player.armor = n; }
-    if (cmd === 'hp' && n > 0 && S.state === 'dead') netRevive();
-    return `${cmd} ${n}.`;
-  }
-  if (cmd === 'spawn') {
+  } else if (cmd === 'spawn') {
     const kinds = { hamas: 'hamas', militant: 'hamas', pij: 'pij', rpg: 'rpg', sniper: 'sniper' };
-    const typeId = kinds[(bits[1] || '').toLowerCase()];
-    const count = Math.max(1, Math.min(8, Math.round(Number(bits[2])) || 1));
+    const typeId = kinds[(bits[0] || '').toLowerCase()];
+    const count = Math.max(1, Math.min(8, Math.round(Number(bits[1])) || 1));
     if (!typeId) return 'Usage: spawn <hamas|pij|rpg|sniper> [count]';
     const fx = -Math.sin(player.yaw), fz = -Math.cos(player.yaw);
     const rx = -fz, rz = fx;
@@ -1740,15 +1815,32 @@ function consoleCommand(line) {
       spawnEnemyOf(typeId, V(player.pos.x + fx * 12 + rx * side, player.pos.y, player.pos.z + fz * 12 + rz * side), 0);
     }
     return `Spawned ${count} ${typeId}.`;
-  }
-  if (cmd === 'clear') {
+  } else if (cmd === 'clear') {
     for (const e of enemies.slice()) removeEnemy(e);
     S.alive = 0;
     S.toSpawn = 0;
     rebuildHitList();
     return 'Hostiles cleared.';
+  } else return null;
+  if (!Object.keys(grant).length && cmd !== 'god' && cmd !== 'noclip' && cmd !== 'wallhack') return null;
+  const targets = [];
+  if (who === 'all') {
+    targets.push(null);
+    if (net && net.listPeers) targets.push(...net.listPeers());
+  } else if (who && who.id) targets.push(who);
+  else targets.push(null);
+  const lines = [];
+  for (const t of targets) {
+    const g = { ...grant };
+    if (cmd === 'god' || cmd === 'noclip' || cmd === 'wallhack') {
+      const word = (bits[0] || '').toLowerCase();
+      const cur = t ? !!t[cmd] : !!S[cmd];
+      g[cmd] = word === 'on' ? true : word === 'off' ? false : !cur;
+    }
+    if (!t) lines.push(`you: ${applySelf(g)}`);
+    else if (net && net.grantPeer) { net.grantPeer(t.id, g); lines.push(`${t.name}: sent`); }
   }
-  return null;
+  return lines.join('\n');
 }
 function updateWaves(dt) {
   if (S.intermission > 0) {
@@ -1859,22 +1951,31 @@ function updatePlayer(dt) {
   player.vel.z = lerp(player.vel.z, mz * speed, Math.min(1, accel * dt));
   player.pos.x += player.vel.x * dt;
   player.pos.z += player.vel.z * dt;
-  resolveCollisions(player.pos, player.prone ? 0.35 : 0.4, player.pos.y, player.prone ? 0.45 : player.crouch ? 1.2 : 1.8);
+  if (S.noclip) {
+    const up = (keys.Space ? 1 : 0) - ((keys.ControlLeft || keys.ControlRight) ? 1 : 0);
+    player.pos.y += up * speed * dt;
+    player.vy = 0;
+    player.onGround = false;
+  } else {
+    resolveCollisions(player.pos, player.prone ? 0.35 : 0.4, player.pos.y, player.prone ? 0.45 : player.crouch ? 1.2 : 1.8);
+  }
   player.pos.x = clamp(player.pos.x, -HALF + 0.5, HALF - 0.5);
   player.pos.z = clamp(player.pos.z, -HALF + 0.5, HALF - 0.5);
 
-  player.vy -= 20 * dt;
-  player.pos.y += player.vy * dt;
-  const gh = groundHeightAt(player.pos.x, player.pos.z, player.pos.y);
-  const wasGround = player.onGround;
-  const vyBefore = player.vy;
-  if (player.pos.y <= gh) { player.pos.y = gh; player.vy = 0; player.onGround = true; }
-  else if (wasGround && player.vy <= 0 && player.pos.y - gh < 0.35) { player.pos.y = gh; player.vy = 0; player.onGround = true; }
-  else player.onGround = false;
-  if (!wasGround && player.onGround && vyBefore < -3) {
-    const k = clamp(-vyBefore / 10, 0.2, 1);
-    S.landDip = Math.max(S.landDip, k);
-    SFX.playLand(k);
+  if (!S.noclip) {
+    player.vy -= 20 * dt;
+    player.pos.y += player.vy * dt;
+    const gh = groundHeightAt(player.pos.x, player.pos.z, player.pos.y);
+    const wasGround = player.onGround;
+    const vyBefore = player.vy;
+    if (player.pos.y <= gh) { player.pos.y = gh; player.vy = 0; player.onGround = true; }
+    else if (wasGround && player.vy <= 0 && player.pos.y - gh < 0.35) { player.pos.y = gh; player.vy = 0; player.onGround = true; }
+    else player.onGround = false;
+    if (!wasGround && player.onGround && vyBefore < -3) {
+      const k = clamp(-vyBefore / 10, 0.2, 1);
+      S.landDip = Math.max(S.landDip, k);
+      SFX.playLand(k);
+    }
   }
   S.landDip = approach(S.landDip, 0, dt * 3);
 
@@ -2227,13 +2328,14 @@ function frame(dt) {
       updateBody(dt);
     }
     if (hostMenuOpen() || (S.state === 'playing' && !(net && net.isClient))) {
-      squad.update(dt, true);
-      updateEnemies(dt);
+      if (!S.frozen) squad.update(dt, true);
+      if (!S.frozen) updateEnemies(dt);
       updateRockets(dt);
       updateGrenades(dt);
       updatePickups(dt);
-      updateWaves(dt);
+      if (!S.frozen) updateWaves(dt);
     }
+    if (S.wallhack || S._wh) { syncWallhack(); S._wh = S.wallhack; }
     if (S.state === 'playing') {
       updateHUD(dt);
       drawMinimap();
@@ -2250,7 +2352,7 @@ function frame(dt) {
     S.time += dt;
     S.deadT += dt;
     if (net && net.online) net.tick(dt);
-    if (net && net.isHost && S.state === 'dead') {
+    if (net && net.isHost && S.state === 'dead' && !S.frozen) {
       updateEnemies(dt);
       updateRockets(dt);
       updateGrenades(dt);
@@ -2501,6 +2603,7 @@ async function boot() {
     disconnected() { if (S.state !== 'menu') toMenu(); },
     backToMenu() { if (S.state !== 'menu') toMenu(); },
     command: consoleCommand,
+    grant: applySelf,
   });
   buildMenu();
   applyQuality(qualityId);
