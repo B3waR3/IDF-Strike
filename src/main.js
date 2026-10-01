@@ -175,9 +175,41 @@ const settings = {
 };
 function lookFov() { return clamp(settings.fov, 60, 100); }
 function applyFit() {
-  const fit = Math.min(innerWidth / 1920, innerHeight / 1080) * (clamp(settings.ui, 70, 140) / 100);
-  document.documentElement.style.setProperty('--fit', String(Math.max(0.45, fit)));
+  const ui = clamp(settings.ui, 70, 140) / 100;
+  const hud = Math.min(innerWidth / 1920, innerHeight / 1080) * ui;
+  document.documentElement.style.setProperty('--hud-fit', String(Math.max(0.2, hud)));
+  const pad = 28;
+  document.querySelectorAll('.screen').forEach((screen) => {
+    if (screen.classList.contains('hidden')) return;
+    const box = screen.querySelector('.menu-inner, .panel, .load-inner');
+    if (!box) return;
+    box.style.transform = 'none';
+    const w = Math.max(box.offsetWidth, box.scrollWidth);
+    const h = Math.max(box.offsetHeight, box.scrollHeight);
+    if (w < 8 || h < 8) return;
+    const fitW = (innerWidth - pad) / w;
+    const fitH = (innerHeight - pad) / h;
+    const scaled = Math.min(fitW * ui, fitH * ui, fitW, fitH);
+    let slot = box.parentElement;
+    if (!slot.classList.contains('fit-slot')) {
+      slot = document.createElement('div');
+      slot.className = 'fit-slot';
+      box.parentNode.insertBefore(slot, box);
+      slot.appendChild(box);
+    }
+    box.style.position = 'absolute';
+    box.style.left = '0';
+    box.style.top = '0';
+    box.style.transformOrigin = 'top left';
+    box.style.transform = `scale(${scaled})`;
+    slot.style.width = Math.ceil(w * scaled) + 'px';
+    slot.style.height = Math.ceil(h * scaled) + 'px';
+  });
 }
+for (const s of document.querySelectorAll('.screen')) {
+  new MutationObserver(() => applyFit()).observe(s, { attributes: true, attributeFilter: ['class'] });
+}
+new MutationObserver(() => applyFit()).observe(document.getElementById('net-status'), { childList: true, characterData: true, subtree: true });
 function applySettings() {
   settings.volume = clamp(settings.volume, 0, 100);
   settings.sens = clamp(settings.sens, 20, 250);
