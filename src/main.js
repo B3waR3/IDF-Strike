@@ -1431,17 +1431,6 @@ function addDamageIndicator(from) {
   hud.ind.appendChild(el);
   el.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 1200, easing: 'ease-in' }).onfinish = () => el.remove();
 }
-  const dx = from.x - player.pos.x, dz = from.z - player.pos.z;
-  const y = player.yaw;
-  const sx = dx * Math.cos(y) - dz * Math.sin(y);
-  const sy = dx * Math.sin(y) + dz * Math.cos(y);
-  const ang = Math.atan2(sx, -sy);
-  const el = document.createElement('div');
-  el.className = 'dmg-ind';
-  el.style.transform = `rotate(${ang}rad)`;
-  hud.ind.appendChild(el);
-  el.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 1200, easing: 'ease-in' }).onfinish = () => el.remove();
-}
 function updateHUD(dt) {
   const w = curW(), d = w.def;
   hud.hpBar.style.width = player.hp + '%';
