@@ -329,7 +329,8 @@ const player = {
 };
 const S = {
   state: 'loading', wave: 0, toSpawn: 0, spawnT: 0, intermission: 0, alive: 0, god: false,
-  noclip: false, wallhack: false, frozen: false,
+  noclip: false, wallhack: false, frozen: false, map: false, tab: false, wheel: false, wheelAng: 0, wheelPick: 'wave',
+  emote: '', emoteT: 0, chat: false, specFP: false, board: null,
   reloading: false, reloadT: 0, reloadDur: 0, switchT: 0, ifakT: 0, fireCD: 0, boltT: 0,
   adsT: 0, bloom: 0, kick: 0, nadeCD: 0, resupplyCD: 0, bobT: 0, shake: 0, sprintT: 0,
   breath: 4, swayT: 0, flashT: 0, hurtT: 0, flowT: 0, time: 0, msgT: 0, triggerFresh: false,
@@ -347,6 +348,7 @@ const vmSway = V();
 let mouseDX = 0, mouseDY = 0;
 
 const enemies = [], grenades = [], rockets = [], pickups = [];
+let pickupSeq = 1;
 let enemyHitMeshes = [];
 
 let botCount = clamp(parseInt(localStorage.getItem('idf-bots') ?? '0', 10) || 0, 0, MAX_BOTS);
@@ -506,15 +508,23 @@ function updateEnemy(e, dt) {
   e.moving = wantMove && moveDir.lengthSq() > 0;
   if (e.flinch > 0) { e.flinch -= dt; speedMul *= 0.3; }
   let sp = 0;
-  if (e.moving) {
+  if (e.vy == null) e.vy = 0;
+  if (e.jumpT == null) e.jumpT = 0;
+  e.jumpT -= dt;
+  const bx = e.pos.x, bz = e.pos.z;
+  if (e.moving && e.vy <= 0) {
     sp = t.speed * speedMul;
     e.pos.x += moveDir.x * sp * dt;
     e.pos.z += moveDir.z * sp * dt;
     resolveCollisions(e.pos, 0.38, e.pos.y);
+    const moved = Math.hypot(e.pos.x - bx, e.pos.z - bz);
+    if (moved < sp * dt * 0.3 && e.jumpT <= 0) { e.vy = 4.4; e.jumpT = 0.9; }
   }
   e.speed = lerp(e.speed, sp, Math.min(1, dt * 8));
-  const gh = groundHeightAt(e.pos.x, e.pos.z, e.pos.y, 0.15);
-  e.pos.y = approach(e.pos.y, gh, dt * 3);
+  e.vy -= 16 * dt;
+  e.pos.y += e.vy * dt;
+  const gh = groundHeightAt(e.pos.x, e.pos.z, e.pos.y + 0.2, 0.15);
+  if (e.pos.y <= gh) { e.pos.y = gh; e.vy = 0; }
 
   const targetRot = e.vis ? Math.atan2(dx, dz) : e.moving ? Math.atan2(moveDir.x, moveDir.z) : e.rot;
   let dr = targetRot - e.rot;
@@ -584,6 +594,7 @@ function enemyShot(e, dist, hit, dmg) {
   // Near-miss suppression is always measured against the player, whoever the shot was meant for.
   const eye = V(player.pos.x, player.pos.y + player.eye - 0.1, player.pos.z);
   const target = V(T.pos.x, T.pos.y + T.eye - 0.35, T.pos.z);
+  let shotEnd = target;
   if (!hit) {
     target.x += rand(-1.3, 1.3); target.y += rand(-0.7, 1.0); target.z += rand(-1.3, 1.3);
     const dir = target.clone().sub(from).normalize();
@@ -592,6 +603,7 @@ function enemyShot(e, dist, hit, dmg) {
     const miss = w.addScaledVector(dir, -along).length();
     const wh = raycastWorld(from, dir, dist * 2 + 30);
     const end = wh ? wh.point : from.clone().addScaledVector(dir, dist * 2 + 30);
+    shotEnd = end;
     if (wh) {
       impactFx(wh.point, wh.normal, wh.surf);
       if (wh.point.distanceTo(player.pos) < 12) { addDecal(wh.point, wh.normal); SFX.playImpact(wh.point, wh.surf); }
@@ -610,6 +622,7 @@ function enemyShot(e, dist, hit, dmg) {
   }
   SFX.playShot(e.t.sound, from);
   enemyMuzzleFlash(from);
+  broadcastShot(from, shotEnd, 'm4', 0);
 }
 
 let rocketMats = null;
@@ -875,7 +888,7 @@ function spawnPickup(type, at) {
   g.position.set(at.x + rand(-0.4, 0.4), gy + 0.35, at.z + rand(-0.4, 0.4));
   g.userData.gy = gy;
   scene.add(g);
-  pickups.push({ g, type, life: 45, t: rand(0, 6) });
+  pickups.push({ id: pickupSeq++, g, type, life: 45, t: rand(0, 6), asked: false });
 }
 function updatePickups(dt) {
   for (let i = pickups.length - 1; i >= 0; i--) {
@@ -884,6 +897,10 @@ function updatePickups(dt) {
     p.g.rotation.y += dt * 1.5;
     p.g.position.y = p.g.userData.gy + 0.4 + Math.sin(p.t * 3) * 0.08;
     const d = Math.hypot(p.g.position.x - player.pos.x, p.g.position.z - player.pos.z);
+    if (net && net.isClient) {
+      if (d < 1.5 && !p.asked) { p.asked = true; net.send({ t: 'take', id: p.id }); }
+      continue;
+    }
     let taken = false;
     if (d < 1.5 && Math.abs(player.pos.y - p.g.userData.gy) < 2) {
       if (p.type === 'ammo') {
@@ -898,6 +915,52 @@ function updatePickups(dt) {
     }
     if (taken || p.life <= 0) { scene.remove(p.g); pickups.splice(i, 1); }
   }
+}
+function pickupList() {
+  return pickups.map((p) => ({ id: p.id, type: p.type, x: p.g.position.x, y: p.g.position.y, z: p.g.position.z }));
+}
+function takePickup(peer, id) {
+  const i = pickups.findIndex((p) => p.id === id);
+  if (i < 0 || !peer || !net) return;
+  const p = pickups[i];
+  if (Math.hypot(p.g.position.x - peer.x, p.g.position.z - peer.z) > 2.6) return;
+  net.send({ t: 'loot', kind: p.type }, peer.id);
+  scene.remove(p.g);
+  pickups.splice(i, 1);
+}
+function applyLoot(kind) {
+  if (kind === 'ammo') {
+    for (const w of player.weapons) if (w.def.type !== 'melee') w.reserve = Math.min(w.reserve + w.def.mag * (w.def.type === 'lmg' ? 1 : 2), w.def.mag * w.def.reserveMags * 1.5);
+    flashMsg('+ AMMO', 1);
+  } else if (kind === 'ifak' && player.ifaks < 5) { player.ifaks++; flashMsg('+ IFAK', 1); }
+  else if (kind === 'plate') {
+    player.armor = Math.min(player.armorMax, player.armor + 50);
+    flashMsg('+ CERAMIC PLATE', 1);
+    if (net && net.isClient) net.send({ t: 'armor', v: player.armor });
+  }
+  SFX.playGear();
+}
+const netDrops = new Map();
+function applyDrops(list) {
+  if (!net || !net.isClient) return;
+  const seen = new Set();
+  for (const d of list) {
+    seen.add(d.id);
+    let rec = netDrops.get(d.id);
+    if (!rec) {
+      const g = new THREE.Group();
+      const box = (w, h, de, m) => { const me = new THREE.Mesh(new THREE.BoxGeometry(w, h, de), m); g.add(me); return me; };
+      const m = new THREE.MeshStandardMaterial({ color: d.type === 'ifak' ? 0xe8e2d0 : d.type === 'plate' ? 0x2d3440 : 0x4b5320, roughness: 0.8 });
+      box(0.45, 0.28, 0.28, m);
+      g.position.set(d.x, d.y, d.z);
+      scene.add(g);
+      rec = { g, asked: false };
+      netDrops.set(d.id, rec);
+    }
+    const dist = Math.hypot(rec.g.position.x - player.pos.x, rec.g.position.z - player.pos.z);
+    if (dist < 1.5 && !rec.asked) { rec.asked = true; net.send({ t: 'take', id: d.id }); }
+  }
+  for (const [id, rec] of netDrops) if (!seen.has(id)) { scene.remove(rec.g); netDrops.delete(id); }
 }
 
 // ============================================================
@@ -984,6 +1047,7 @@ function fireRay(w, spread) {
   if (def.tracerEvery && w.shotN % def.tracerEvery === 0) {
     spawnTracer(muzzleWorld(w, V()), end, 0xffc880, 0.018, 700);
   }
+  if (net && net.isHost) broadcastShot(origin, end, w.id, 0);
 }
 
 function ejectCasing(w) {
@@ -1173,6 +1237,15 @@ function matchNote(text) {
   log.appendChild(el);
   while (log.children.length > 6) log.firstChild.remove();
   setTimeout(() => el.remove(), 8000);
+  const chat = $('chat-log');
+  if (chat) {
+    const line = document.createElement('div');
+    line.className = 'chat-line';
+    line.textContent = text;
+    chat.appendChild(line);
+    while (chat.children.length > 8) chat.firstChild.remove();
+    setTimeout(() => line.remove(), 8000);
+  }
 }
 function renderShop() {
   $('shop-points').textContent = `POINTS  ${player.score}`;
@@ -1204,11 +1277,13 @@ function openShop() {
   $('shop').classList.remove('hidden');
   document.exitPointerLock();
 }
-function closeShop() {
+function closeShop(fromEsc) {
   if (!shopOpen.on) return;
-  suppressPause = true;
   shopOpen.on = false;
   $('shop').classList.add('hidden');
+  // Esc both closes the shop and releases the mouse. Asking for the mouse again on that same
+  // key makes the game think you paused.
+  if (fromEsc) { suppressPause = true; return; }
   if (S.state === 'playing') canvas.requestPointerLock();
 }
 function discardWeapon(w) {
@@ -1325,7 +1400,37 @@ function addKillfeed(e, head, nade, bot = null) {
     });
   }
 }
+function showShotFx(origin, end, weapon) {
+  spawnTracer(origin, end, 0xffc880, 0.018, 700);
+  const dir = end.clone().sub(origin);
+  const len = dir.length();
+  if (len < 0.05) return;
+  dir.multiplyScalar(1 / len);
+  const wh = raycastWorld(origin, dir, len + 0.3);
+  if (wh && wh.point.distanceTo(end) < 2) {
+    impactFx(wh.point, wh.normal, wh.surf);
+    addDecal(wh.point, wh.normal);
+    SFX.playImpact(wh.point, wh.surf);
+  }
+  const snd = (WEAPONS[weapon] && WEAPONS[weapon].sound) || WEAPONS.m4.sound;
+  SFX.playShot(snd, origin);
+}
+function broadcastShot(origin, end, weapon, skipId) {
+  if (!net || !net.isHost || !net.relayFx) return;
+  net.relayFx({ t: 'fx', ox: origin.x, oy: origin.y, oz: origin.z, ex: end.x, ey: end.y, ez: end.z, weapon }, skipId);
+}
 function addDamageIndicator(from) {
+  const dx = from.x - player.pos.x, dz = from.z - player.pos.z;
+  const y = player.yaw;
+  const sx = dx * Math.cos(y) - dz * Math.sin(y);
+  const sy = dx * Math.sin(y) + dz * Math.cos(y);
+  const ang = Math.atan2(sx, -sy);
+  const el = document.createElement('div');
+  el.className = 'dmg-ind';
+  el.style.transform = `rotate(${ang}rad)`;
+  hud.ind.appendChild(el);
+  el.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 1200, easing: 'ease-in' }).onfinish = () => el.remove();
+}
   const dx = from.x - player.pos.x, dz = from.z - player.pos.z;
   const y = player.yaw;
   const sx = dx * Math.cos(y) - dz * Math.sin(y);
@@ -1353,8 +1458,8 @@ function updateHUD(dt) {
   hud.reserve.textContent = d.type === 'melee' ? '' : '/ ' + w.reserve;
   hud.mode.textContent = S.reloading ? 'RELOADING…' : d.type === 'melee' ? (stab.t >= 0 ? 'STABBING' : 'MELEE') : d.modes[w.mode];
   hud.slots.innerHTML = player.weapons.map((x, i) => `<span class="${i === player.cur ? 'active' : ''}">[${i + 1}] ${x.def.tag || x.def.name}</span>`).join(' &nbsp; ');
-  hud.kills.textContent = player.kills;
-  hud.score.textContent = player.score;
+  hud.kills.textContent = (specFocus() && S.state === 'dead') ? specFocus().kills : player.kills;
+  hud.score.textContent = (specFocus() && S.state === 'dead') ? specFocus().points : player.score;
   hud.hostiles.textContent = S.alive + S.toSpawn;
   hud.wave.textContent = 'WAVE ' + S.wave;
   hud.obj.textContent = S.intermission > 0
@@ -1416,18 +1521,82 @@ function updateHUD(dt) {
   while (hud.squad.children.length > mates.length) hud.squad.lastChild.remove();
 }
 
+function specFocus() {
+  if (S.state !== 'dead' || !net || !net.online) return null;
+  const allies = net.livingAllies();
+  if (!allies.length) return null;
+  return allies[((spectateI % allies.length) + allies.length) % allies.length];
+}
+function drawBigMap() {
+  const canvas = $('bigmap');
+  if (!canvas) return;
+  canvas.classList.toggle('hidden', !S.map);
+  if (!S.map) return;
+  const c = canvas.getContext('2d');
+  const W = canvas.width;
+  const span = HALF * 2;
+  c.clearRect(0, 0, W, W);
+  c.fillStyle = 'rgba(18,22,14,0.92)';
+  c.fillRect(0, 0, W, W);
+  const px = (x) => (x + HALF) / span * W;
+  const pz = (z) => (z + HALF) / span * W;
+  for (const r of mapRects) {
+    c.fillStyle = r.kind === 'b' ? 'rgba(170,180,150,0.75)' : 'rgba(120,125,105,0.65)';
+    c.fillRect(px(r.x), pz(r.z), r.w / span * W, r.d / span * W);
+  }
+  const mark = (x, z, color) => { c.fillStyle = color; c.beginPath(); c.arc(px(x), pz(z), 5, 0, 7); c.fill(); };
+  mark(player.pos.x, player.pos.z, '#fff');
+  if (net && net.online) for (const b of net.peerMarks()) mark(b.x, b.z, '#9ad0ff');
+  for (const b of squad.bots) if (b.alive) mark(b.pos.x, b.pos.z, '#6ec8ff');
+}
+function renderScoreboard() {
+  const el = $('scoreboard');
+  if (!el) return;
+  el.classList.toggle('hidden', !S.tab);
+  if (!S.tab) return;
+  const rows = [{ name: net && net.selfName ? net.selfName() : 'You', kills: player.kills, points: player.score }];
+  const board = S.board || [];
+  for (const r of board) if (r.name && r.name !== rows[0].name) rows.push(r);
+  if (net && net.listPeers) for (const p of net.listPeers()) if (!rows.some((r) => r.name === p.name)) rows.push({ name: p.name, kills: p.kills || 0, points: p.score || 0 });
+  el.innerHTML = `<h3>SCORE</h3><table><tr><th>NAME</th><th class="n">KILLS</th><th class="n">POINTS</th></tr>${rows.map((r) => `<tr><td>${r.name}</td><td class="n">${r.kills || 0}</td><td class="n">${r.points || 0}</td></tr>`).join('')}</table>`;
+}
+const EMOTES = ['wave', 'salute', 'point', 'cheer', 'dance'];
+function layoutWheel() {
+  const wheel = $('emote-wheel');
+  if (!wheel) return;
+  wheel.classList.toggle('hidden', !S.wheel);
+  if (!wheel.childElementCount) {
+    EMOTES.forEach((name) => {
+      const s = document.createElement('span');
+      s.textContent = name.toUpperCase();
+      wheel.appendChild(s);
+    });
+  }
+  const n = EMOTES.length;
+  const idx = ((Math.round(S.wheelAng / (Math.PI * 2) * n) % n) + n) % n;
+  [...wheel.children].forEach((el, i) => {
+    const a = -Math.PI / 2 + i / n * Math.PI * 2;
+    el.style.transform = `translate(${Math.cos(a) * 90}px, ${Math.sin(a) * 90}px)`;
+    el.classList.toggle('on', i === idx);
+  });
+  S.wheelPick = EMOTES[idx];
+}
 function drawMinimap() {
-  const c = hud.mm, W = 200, R = 70, s = W / 2 / R;
+  const c = hud.mm, W = 200, R = S.map ? 114 : 70, s = W / 2 / R;
+  const focus = specFocus();
+  const cx = focus ? focus.x : player.pos.x;
+  const cz = focus ? focus.z : player.pos.z;
+  const cyaw = focus ? focus.yaw : player.yaw;
   c.clearRect(0, 0, W, W);
   c.fillStyle = 'rgba(30,38,24,0.85)';
   c.fillRect(0, 0, W, W);
   c.save();
   c.translate(W / 2, W / 2);
-  c.rotate(player.yaw);
+  c.rotate(cyaw);
   c.scale(s, s);
-  c.translate(-player.pos.x, -player.pos.z);
+  c.translate(-cx, -cz);
   for (const r of mapRects) {
-    if (Math.abs(r.x + r.w / 2 - player.pos.x) > R + 20 || Math.abs(r.z + r.d / 2 - player.pos.z) > R + 20) continue;
+    if (!S.map && (Math.abs(r.x + r.w / 2 - cx) > R + 20 || Math.abs(r.z + r.d / 2 - cz) > R + 20)) continue;
     c.fillStyle = r.kind === 'b' ? 'rgba(170,180,150,0.75)' : r.kind === 't' ? 'rgba(110,168,255,0.9)' : 'rgba(120,125,105,0.7)';
     c.fillRect(r.x, r.z, r.w, r.d);
   }
@@ -1438,8 +1607,8 @@ function drawMinimap() {
   for (const p of pickups) { c.fillStyle = '#7ddc6a'; c.fillRect(p.g.position.x - 0.8, p.g.position.z - 0.8, 1.6, 1.6); }
   for (const e of (net && net.isClient ? net.enemyMarks() : enemies)) {
     if (e.dead || e.emerge > 0) continue;
-    const d = Math.hypot(e.pos.x - player.pos.x, e.pos.z - player.pos.z);
-    if (d > 45 && !e.vis) continue;
+    const d = Math.hypot(e.pos.x - cx, e.pos.z - cz);
+    if (!S.map && d > 45 && !e.vis) continue;
     c.fillStyle = (e.sniper || e.t?.sniper) ? '#ffcf3c' : '#ff4a3c';
     c.beginPath(); c.arc(e.pos.x, e.pos.z, 1.6, 0, 7); c.fill();
   }
@@ -1478,10 +1647,17 @@ function closeSettings(back) {
 document.addEventListener('keydown', (e) => {
   keys[e.code] = true;
   if (e.code === 'Escape') {
-    if (shopOpen.on) { closeShop(); e.preventDefault(); return; }
+    if (S.chat) { closeChat(); e.preventDefault(); return; }
+    if (shopOpen.on) { closeShop(true); e.preventDefault(); return; }
     if (!$('settings').classList.contains('hidden')) { closeSettings(false); e.preventDefault(); return; }
     if (S.state === 'paused') { resumeGame(); e.preventDefault(); return; }
   }
+  if (S.chat) return;
+  if (e.code === 'Tab') { S.tab = true; e.preventDefault(); return; }
+  if (e.code === 'KeyM' && (S.state === 'playing' || S.state === 'dead')) { S.map = !S.map; return; }
+  if (e.code === 'KeyV' && S.state === 'dead') { S.specFP = !S.specFP; return; }
+  if (e.code === 'KeyT' && S.state === 'playing' && !e.repeat) { openChat(); return; }
+  if (e.code === 'KeyX' && S.state === 'playing' && !e.repeat && !shopOpen.on) { S.wheel = true; return; }
   if (S.state !== 'playing' || shopOpen.on) return;
   switch (e.code) {
     case 'KeyR': startReload(); break;
@@ -1515,6 +1691,12 @@ document.addEventListener('keydown', (e) => {
 document.addEventListener('keyup', (e) => {
   keys[e.code] = false;
   if (e.code === 'KeyG') nade.held = false;
+  if (e.code === 'Tab') S.tab = false;
+  if (e.code === 'KeyX' && S.wheel) {
+    S.wheel = false;
+    S.emote = S.wheelPick || 'wave';
+    S.emoteT = 0;
+  }
 });
 document.addEventListener('mousedown', (e) => {
   if (shopOpen.on) return;
@@ -1541,10 +1723,44 @@ document.addEventListener('mousemove', (e) => {
   player.pitch -= e.movementY * sens;
   player.pitch = clamp(player.pitch, -1.5, 1.5);
   mouseDX += e.movementX; mouseDY += e.movementY;
+  if (S.wheel) S.wheelAng = Math.atan2(e.clientY - innerHeight / 2, e.clientX - innerWidth / 2);
+});
+function openChat() {
+  if (S.state !== 'playing' || S.chat) return;
+  S.chat = true;
+  suppressPause = true;
+  const box = $('chat-box');
+  box.classList.remove('hidden');
+  box.value = '';
+  box.focus();
+  document.exitPointerLock();
+}
+function closeChat() {
+  if (!S.chat) return;
+  S.chat = false;
+  suppressPause = true;
+  $('chat-box').classList.add('hidden');
+  if (S.state === 'playing') canvas.requestPointerLock();
+}
+function sendChat() {
+  const text = $('chat-box').value.trim().slice(0, 80);
+  closeChat();
+  if (!text || !net) return;
+  if (net.isClient) net.send({ t: 'chat', text });
+  else if (net.isHost) {
+    const line = `${net.selfName()}: ${text}`;
+    matchNote(line);
+    net.send({ t: 'notice', text: line });
+  }
+}
+$('chat-box').addEventListener('keydown', (e) => {
+  e.stopPropagation();
+  if (e.code === 'Enter') { e.preventDefault(); sendChat(); }
+  if (e.code === 'Escape') { e.preventDefault(); closeChat(); }
 });
 document.addEventListener('pointerlockchange', () => {
   if (document.pointerLockElement === canvas) { suppressPause = false; return; }
-  if (suppressPause || shopOpen.on) { suppressPause = false; return; }
+  if (suppressPause || shopOpen.on) return;
   if (S.state === 'playing') pauseGame();
 });
 
@@ -1565,6 +1781,9 @@ function applyShot(peer, m) {
   if (!def || def.type === 'melee') return;
   dir.normalize();
   const wh = raycastWorld(origin, dir, 800);
+  const end = wh ? wh.point.clone() : origin.clone().addScaledVector(dir, 80);
+  showShotFx(origin, end, m.weapon);
+  broadcastShot(origin, end, m.weapon, peer.id);
   raycaster.set(origin, dir);
   raycaster.far = wh ? wh.t : 800;
   const hits = raycaster.intersectObjects(enemyHitMeshes, false);
@@ -1579,7 +1798,6 @@ function applyShot(peer, m) {
   const credit = { name: peer.name, def: { name: def.tag || def.name }, remote: true, id: peer.id };
   const hit = damageEnemy(e, dmg, h.point, dir, head, credit);
   if (!hit.kill) net.send({ t: 'marker', kill: false, head }, peer.id);
-  if (def.tracerEvery) spawnTracer(origin, h.point, 0xffc880, 0.018, 700);
 }
 function applyStab(peer, m) {
   if (!peer.alive || !Number.isFinite(m.x)) return;
@@ -1747,10 +1965,26 @@ function consoleCommand(line) {
   const cmd = (rawBits[0] || '').toLowerCase();
   let bits = rawBits.slice(1);
   let who = null;
-  if (bits.length && net && net.peerByName) {
-    const last = bits[bits.length - 1];
-    const hit = last.toLowerCase() === 'all' ? 'all' : net.peerByName(last);
-    if (hit) { who = hit === 'all' ? 'all' : hit; bits = bits.slice(0, -1); }
+  if (net && net.listPeers) {
+    const peers = net.listPeers().slice().sort((a, b) => (b.name || '').length - (a.name || '').length);
+    const text = bits.join(' ');
+    const low = text.toLowerCase();
+    if (low === 'all' || low.endsWith(' all')) {
+      const rest = low === 'all' ? '' : text.slice(0, -4).trim();
+      bits = rest ? rest.split(/\s+/) : [];
+      who = 'all';
+    } else {
+      for (const p of peers) {
+        const n = (p.name || '').toLowerCase();
+        if (!n) continue;
+        if (low === n || low.endsWith(' ' + n)) {
+          const rest = text.slice(0, text.length - p.name.length).trim();
+          bits = rest ? rest.split(/\s+/) : [];
+          who = p;
+          break;
+        }
+      }
+    }
   }
   const arg = bits.join(' ');
   const live = S.state === 'playing' || S.state === 'paused' || S.state === 'dead';
@@ -2163,6 +2397,7 @@ function updateBody(dt) {
     nade: nade.phase ? nade : null,
     knife: w.def.type === 'melee', stab: stab.t, prone: player.prone, inspect: S.inspectT,
     ifak: S.ifakT > 0 ? MED_TIMING.dur - S.ifakT : -1,
+    emote: S.emote, emoteT: S.emoteT,
   });
 }
 
@@ -2173,7 +2408,7 @@ function updateViewModel(dt) {
   const medT = S.ifakT > 0 ? MED_TIMING.dur - S.ifakT : -1;
   const medLow = medT < 0 ? 0 : Math.min(smoothstep(medT / 0.28), smoothstep(S.ifakT / 0.38));
   for (const x of player.weapons) if (x.model) x.model.group.visible = x.model.arms.visible = x === w && !nade.phase && medLow < 0.97;
-  vmRoot.visible = !(d.scope && S.adsT > 0.9) && !tpActive();
+  vmRoot.visible = !(d.scope && S.adsT > 0.9) && !tpActive() && !S.emote;
   if (!nadeVM) nadeVM = buildGrenadeViewModel(vmRoot);
   nadeVM.group.position.set(vmSway.x * 0.8, vmSway.y * 0.8 - S.landDip * 0.05, 0);
   nadeVM.update(nade.phase ? nade : null, S.time);
@@ -2337,8 +2572,12 @@ function frame(dt) {
     }
     if (S.wallhack || S._wh) { syncWallhack(); S._wh = S.wallhack; }
     if (S.state === 'playing') {
+      if (S.emote) { S.emoteT += dt; if (S.emoteT > 2.4) S.emote = ''; }
       updateHUD(dt);
       drawMinimap();
+      drawBigMap();
+      renderScoreboard();
+      layoutWheel();
     }
   } else if (S.state === 'menu') {
     S.time += dt;
@@ -2352,6 +2591,10 @@ function frame(dt) {
     S.time += dt;
     S.deadT += dt;
     if (net && net.online) net.tick(dt);
+    updateHUD(dt);
+    drawMinimap();
+    drawBigMap();
+    renderScoreboard();
     if (net && net.isHost && S.state === 'dead' && !S.frozen) {
       updateEnemies(dt);
       updateRockets(dt);
@@ -2362,10 +2605,15 @@ function frame(dt) {
     const spec = $('spectate');
     if (allies.length) {
       const s = allies[((spectateI % allies.length) + allies.length) % allies.length];
-      const back = 2.8;
-      camera.position.set(s.x + Math.sin(s.yaw) * back, s.y + (s.eye || 1.6) + 0.35, s.z + Math.cos(s.yaw) * back);
-      camera.lookAt(s.x, s.y + (s.eye || 1.6) * 0.72, s.z);
-      camera.rotation.z = 0;
+      if (S.specFP) {
+        camera.position.set(s.x, s.y + (s.eye || 1.6), s.z);
+        camera.rotation.set(s.pitch || 0, s.yaw, 0);
+      } else {
+        const back = 2.8;
+        camera.position.set(s.x + Math.sin(s.yaw) * back, s.y + (s.eye || 1.6) + 0.35, s.z + Math.cos(s.yaw) * back);
+        camera.lookAt(s.x, s.y + (s.eye || 1.6) * 0.72, s.z);
+        camera.rotation.z = 0;
+      }
       spec.classList.remove('hidden');
       spec.querySelector('b').textContent = s.name;
       $('gameover').classList.add('spectate-mode');
@@ -2602,7 +2850,15 @@ async function boot() {
     },
     disconnected() { if (S.state !== 'menu') toMenu(); },
     backToMenu() { if (S.state !== 'menu') toMenu(); },
+    pickupList,
+    takePickup,
+    applyDrops,
+    applyBoard(board) { S.board = board; },
+    shotFx(m) { showShotFx(V(m.ox, m.oy, m.oz), V(m.ex, m.ey, m.ez), m.weapon); },
+    hitFrom(m) { addDamageIndicator({ x: m.x, z: m.z }); },
+    loot: applyLoot,
     command: consoleCommand,
+    grant: applySelf,
     grant: applySelf,
   });
   buildMenu();

@@ -62,6 +62,11 @@
       <div id="progress-label"></div>
       <div class="bar"><div id="progress-bar"></div></div>
     </div>
+    <div id="scoreboard" class="hidden"></div>
+    <canvas id="bigmap" class="hidden" width="720" height="720"></canvas>
+    <div id="chat-log"></div>
+    <input id="chat-box" class="hidden" maxlength="80" placeholder="Say something…">
+    <div id="emote-wheel" class="hidden"></div>
   </div>
 
   <div id="menu" class="screen hidden">
@@ -106,7 +111,11 @@
           <div><kbd>3</kbd> Karambit · LMB stabs, a hit in the back kills</div>
           <div><kbd>I</kbd> Inspect weapon</div>
           <div><kbd>B</kbd> Fire mode</div>
-          <div><kbd>V</kbd> Third person</div>
+          <div><kbd>T</kbd> Chat</div>
+          <div><kbd>Tab</kbd> Scoreboard</div>
+          <div><kbd>M</kbd> Map · move while it is open</div>
+          <div><kbd>X</kbd> Hold for emotes</div>
+          <div><kbd>V</kbd> Third person · first person while waiting to respawn</div>
           <div><kbd>G</kbd> Frag grenade · tap to throw, hold to cook (4 s fuse)</div>
           <div><kbd>H</kbd> Use IFAK</div>
           <div><kbd>F</kbd> Shekem shop, by the Merkava</div>
@@ -158,7 +167,7 @@
   <div id="gameover" class="screen hidden">
     <div class="panel">
       <h2 id="go-title">KIA</h2>
-      <div id="spectate" class="hidden">SPECTATING <b></b><div>Click to switch</div></div>
+      <div id="spectate" class="hidden">SPECTATING <b></b><div>Click to switch · V first person</div></div>
       <div id="go-stats"></div>
       <button id="redeploy-btn">REDEPLOY</button>
     </div>

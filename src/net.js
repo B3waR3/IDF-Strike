@@ -143,6 +143,15 @@ export function createNet(hooks) {
   }
 
   function roster() {
+    if (role === 'client') {
+      const rows = [];
+      for (const b of bodies.values()) {
+        const s = b.goal;
+        if (!s) continue;
+        rows.push({ name: s.name || 'Ally', tag: s.alive === false ? 'DOWN' : 'ALLY', hp: Math.max(0, s.hp || 0), down: s.alive === false });
+      }
+      return rows;
+    }
     const rows = [];
     for (const p of peers.values()) {
       if (!p.ready && role === 'host') continue;
@@ -173,6 +182,10 @@ export function createNet(hooks) {
     p.ads = fin(m.ads) ? m.ads : 0;
     p.eye = fin(m.eye) ? m.eye : 1.65;
     if (typeof m.weapon === 'string') p.weapon = m.weapon;
+    if (fin(m.kills)) p.kills = m.kills | 0;
+    if (fin(m.score)) p.score = m.score | 0;
+    if (typeof m.emote === 'string') p.emote = m.emote;
+    p.emoteT = fin(m.emoteT) ? m.emoteT : 0;
     p.seenAt = now;
   }
 
@@ -184,7 +197,14 @@ export function createNet(hooks) {
       peers.set(id, p);
     }
     if (m.t === 'hello') {
+      const first = !p.announced;
       p.name = String(m.name || 'Soldier').slice(0, 16);
+      if (first) {
+        p.announced = true;
+        const text = `${p.name} has joined the game`;
+        if (hooks.notice) hooks.notice(text);
+        send({ t: 'notice', text });
+      }
       send({ t: 'welcome', id, live }, id);
       if (live && p.ready) send(beginMsg(id), id);
       refreshStatus();
@@ -211,7 +231,13 @@ export function createNet(hooks) {
     } else if (m.t === 'armor') {
       const max = p.armorMax || 100;
       if (p.alive && fin(m.v)) p.armor = Math.max(0, Math.min(max, m.v));
-    }
+    } else if (m.t === 'chat') {
+      const text = String(m.text || '').slice(0, 80).trim();
+      if (!text) return;
+      const line = `${p.name}: ${text}`;
+      if (hooks.notice) hooks.notice(line);
+      send({ t: 'notice', text: line });
+    } else if (m.t === 'take' && hooks.takePickup) hooks.takePickup(p, m.id);
   }
 
   function beginMsg(id) {
@@ -302,6 +328,8 @@ export function createNet(hooks) {
     syncProps('nades', m.nades || [], nadeGeo, nadeMat, 1);
     syncProps('rockets', m.rockets || [], rocketGeo, rocketMat, 1);
     if (m.wave != null) hooks.applyWave(m);
+    if (m.board && hooks.applyBoard) hooks.applyBoard(m.board);
+    if (m.drops && hooks.applyDrops) hooks.applyDrops(m.drops);
   }
 
   function syncProps(kind, list, geo, mat) {
@@ -362,6 +390,7 @@ export function createNet(hooks) {
         pitch: s.pitch || 0, crouch: !!s.crouch, sprint: !!s.sprint, ads: s.ads || 0,
         reloadP: -1, empty: false, kick: 0, switchK: 0, nade: null,
         knife: s.weapon === 'karambit', stab: -1, prone: !!s.prone, inspect: -1, ifak: -1,
+        emote: s.emote || '', emoteT: s.emoteT || 0,
       });
     }
     for (const f of foes.values()) {
@@ -380,6 +409,7 @@ export function createNet(hooks) {
       x: p.pos.x, y: p.pos.y, z: p.pos.z, yaw: p.yaw, pitch: p.pitch + (p.recoilP || 0),
       vx: p.vel.x, vz: p.vel.z, crouch: !!p.crouch, prone: !!p.prone, sprint: !!p.sprinting,
       ads: S.adsT || 0, eye: p.eye, weapon: w ? w.id : 'tavor',
+      kills: p.kills || 0, score: p.score || 0, emote: S.emote || '', emoteT: S.emoteT || 0,
     };
   }
 
@@ -390,13 +420,13 @@ export function createNet(hooks) {
     const players = [{
       id: 0, name: myName, x: p.pos.x, y: p.pos.y, z: p.pos.z, yaw: p.yaw, pitch: p.pitch,
       vx: p.vel.x, vz: p.vel.z, crouch: !!p.crouch, prone: !!p.prone, sprint: !!p.sprinting,
-      ads: S.adsT || 0, weapon: w ? w.id : 'tavor', hp: p.hp, alive: S.state === 'playing' || S.state === 'paused',
+      ads: S.adsT || 0, weapon: w ? w.id : 'tavor', hp: p.hp, kills: p.kills || 0, points: p.score || 0, alive: S.state === 'playing' || S.state === 'paused',
     }];
     for (const q of peers.values()) {
       players.push({
         id: q.id, name: q.name, x: q.x, y: q.y, z: q.z, yaw: q.yaw, pitch: q.pitch,
         vx: q.vx, vz: q.vz, crouch: q.crouch, prone: q.prone, sprint: q.sprint,
-        ads: q.ads, weapon: q.weapon, hp: q.hp, armor: q.armor, alive: q.alive && q.ready,
+        ads: q.ads, weapon: q.weapon, hp: q.hp, armor: q.armor, kills: q.kills || 0, points: q.score || 0, alive: q.alive && q.ready,
       });
     }
     const enemies = hooks.enemies().map((e) => ({
@@ -409,6 +439,11 @@ export function createNet(hooks) {
       nades: hooks.grenades().map((g) => ({ id: g.gid, x: g.pos.x, y: g.pos.y, z: g.pos.z })),
       rockets: hooks.rockets().map((r) => ({ id: r.rid, x: r.m.position.x, y: r.m.position.y, z: r.m.position.z })),
       wave: S.wave, intermission: S.intermission, alive: S.alive, toSpawn: S.toSpawn,
+      board: [
+        { id: 0, name: myName, kills: p.kills || 0, points: p.score || 0, hp: p.hp },
+        ...[...peers.values()].filter((q) => q.ready || q.announced).map((q) => ({ id: q.id, name: q.name, kills: q.kills || 0, points: q.score || 0, hp: q.hp })),
+      ],
+      drops: hooks.pickupList ? hooks.pickupList() : [],
     };
   }
 
@@ -442,6 +477,9 @@ export function createNet(hooks) {
     else if (m.t === 'feed') hooks.killLine(m.id === myId ? 'You' : (m.name || 'Ally'), m.weapon || 'Weapon', m.enemy || 'Militant', !!m.head);
     else if (m.t === 'notice' && m.text) hooks.notice(m.text);
     else if (m.t === 'grant' && hooks.grant) hooks.grant(m);
+    else if (m.t === 'fx' && hooks.shotFx) hooks.shotFx(m);
+    else if (m.t === 'hitfrom' && hooks.hitFrom) hooks.hitFrom(m);
+    else if (m.t === 'loot' && hooks.loot) hooks.loot(m.kind);
     else if (m.t === 'full') { status('That mission is full (4 players).'); stop(); }
     else if (m.t === 'closed') { if (role === 'client') { status('Lost the host.'); hooks.disconnected(); role = null; } }
     else if (m.t === 'menu') { live = false; cls = null; clearWorld(); hooks.backToMenu(); }
@@ -469,9 +507,9 @@ export function createNet(hooks) {
     livingAllies() {
       const out = [];
       if (role === 'host') {
-        for (const p of peers.values()) if (p.alive && p.seenAt) out.push({ name: p.name, x: p.x, y: p.y, z: p.z, yaw: p.yaw, eye: p.eye || 1.6 });
+        for (const p of peers.values()) if (p.alive && p.seenAt) out.push({ name: p.name, x: p.x, y: p.y, z: p.z, yaw: p.yaw, pitch: p.pitch || 0, eye: p.eye || 1.6, kills: p.kills || 0, points: p.score || 0 });
       } else {
-        for (const b of bodies.values()) if (b.goal && b.goal.alive !== false) out.push({ name: b.goal.name || 'Ally', x: b.x, y: b.y, z: b.z, yaw: b.yaw, eye: 1.6 });
+        for (const b of bodies.values()) if (b.goal && b.goal.alive !== false) out.push({ name: b.goal.name || 'Ally', x: b.x, y: b.y, z: b.z, yaw: b.yaw, pitch: b.goal.pitch || 0, eye: b.goal.eye || 1.6, kills: b.goal.kills || 0, points: b.goal.points || 0 });
       }
       return out;
     },
@@ -538,6 +576,9 @@ export function createNet(hooks) {
     },
     listPeers() { return [...peers.values()]; },
     eachFoe(fn) { for (const f of foes.values()) fn(f.ch.root); },
+    relayFx(data, skipId) {
+      for (const q of peers.values()) if (q.id !== skipId) send(data, q.id);
+    },
     grantPeer(id, grant) {
       const p = peers.get(id);
       if (!p) return;
@@ -551,7 +592,7 @@ export function createNet(hooks) {
       }
       send({ t: 'grant', ...grant }, id);
     },
-    hurt(id, amount, _from, explosive) {
+    hurt(id, amount, from, explosive) {
       const p = peers.get(id);
       if (!p || !p.alive || p.god) return;
       let a = amount;
@@ -562,6 +603,7 @@ export function createNet(hooks) {
       }
       p.hp -= a;
       if (p.hp <= 0) { p.hp = 0; p.alive = false; }
+      if (from && from.x != null) send({ t: 'hitfrom', x: from.x, y: from.y || 0, z: from.z }, id);
     },
     reviveHumans() {
       for (const p of peers.values()) if (p.ready && !p.alive) { p.hp = 100; p.armor = p.armorMax; p.alive = true; }

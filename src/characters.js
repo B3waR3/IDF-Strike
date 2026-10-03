@@ -739,6 +739,27 @@ export function createPlayerBody() {
     return p > 0.15 && p < 0.66;
   }
 
+  function emoteArms(kind, t, drop_) {
+    gunPivot.visible = false;
+    const s = Math.sin(t * 5);
+    const hands = {
+      wave: [[-0.42, 1.35 + Math.max(0, s) * 0.5, 0.2], [0.28, 0.95, 0.16]],
+      salute: [[-0.12, 1.58, 0.22], [0.28, 0.95, 0.16]],
+      point: [[-0.18, 1.4, 0.62], [0.28, 0.95, 0.16]],
+      cheer: [[-0.36, 1.72, 0.12], [0.36, 1.72, 0.12]],
+      dance: [[-0.42, 1.15 + s * 0.4, 0.2], [0.42, 1.15 - s * 0.4, 0.2]],
+    };
+    const pair = hands[kind] || hands.wave;
+    root.localToWorld(gripW.set(pair[0][0], pair[0][1] + drop_, pair[0][2]));
+    root.localToWorld(handW.set(pair[1][0], pair[1][1] + drop_, pair[1][2]));
+    root.localToWorld(poleR.set(-0.75, 1.35, 0.25));
+    root.localToWorld(poleL.set(0.75, 1.35, 0.25));
+    solveIK(B.RightArm, B.RightForeArm, B.RightHand, gripW, poleR);
+    solveIK(B.LeftArm, B.LeftForeArm, B.LeftHand, handW, poleL);
+    curlFingers(HR, 0.4, 0.2);
+    curlFingers(HL, 0.4, 0.2);
+  }
+
   return {
     root, setWeapon,
     get pistol() { return !!cur?.pistol; },
@@ -887,6 +908,8 @@ export function createPlayerBody() {
         gun.root.worldToLocal(local.copy(handW));
         gun.mag.position.add(local.sub(cur.magC));
       }
+      if (st.emote) emoteArms(st.emote, st.emoteT || 0, drop_);
+      else gunPivot.visible = true;
     },
   };
 }

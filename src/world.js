@@ -796,13 +796,6 @@ export function buildWorld(sc) {
   addCollider(-HALF - 3, -HALF, -HALF - 3, HALF + 3, 0, 6, 'concrete');
   addCollider(HALF, HALF + 3, -HALF - 3, HALF + 3, 0, 6, 'concrete');
 
-  for (let i = 0; i < 170; i++) {
-    const a = rand(0, Math.PI * 2), dist = rand(135, 260);
-    const x = Math.cos(a) * dist, z = Math.sin(a) * dist;
-    const w = rand(10, 22), d = rand(10, 22), fl = randInt(2, 8);
-    pick(B.far).add(x, 0, z, w, fl * 3, d, Math.round(rand(0, 3)) * Math.PI / 2);
-  }
-
   merkava(scene, -9, 107);
   shekem(scene, -3.6, 103.2);
   sandbagWall(4, 99.5, false, 3.2);

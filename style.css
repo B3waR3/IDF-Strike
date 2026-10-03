@@ -172,6 +172,19 @@ button.secondary { background: #3a3628; color: #e8e4d8; }
 #spectate { font-size: 14px; letter-spacing: 2px; color: #c8b270; }
 #spectate b { color: #fff; }
 #spectate div { font-size: 11px; letter-spacing: 1px; color: #b5ad96; }
+#scoreboard { position: absolute; left: 50%; top: 14%; transform: translateX(-50%); min-width: 460px; background: rgba(8,8,6,0.82); border: 1px solid #c8b270; padding: 14px 18px; pointer-events: none; }
+#scoreboard h3 { text-align: center; letter-spacing: 4px; color: #f2d98a; margin-bottom: 8px; }
+#scoreboard table { width: 100%; border-collapse: collapse; font-size: 14px; }
+#scoreboard th { text-align: left; color: #c8b270; font-weight: 600; letter-spacing: 1px; padding-bottom: 6px; }
+#scoreboard td { padding: 3px 8px 3px 0; }
+#scoreboard td.n { text-align: right; font-variant-numeric: tabular-nums; }
+#bigmap { position: absolute; left: 50%; top: 50%; width: min(70vh, 70vw); height: min(70vh, 70vw); transform: translate(-50%, -50%); background: rgba(8,10,6,0.88); border: 2px solid rgba(200,190,150,0.7); pointer-events: none; }
+#chat-log { position: absolute; left: 24px; bottom: 250px; width: 420px; pointer-events: none; }
+.chat-line { font-size: 14px; color: #f4efe0; background: rgba(0,0,0,0.45); padding: 3px 8px; margin-top: 3px; }
+#chat-box { position: absolute; left: 24px; bottom: 220px; width: 420px; pointer-events: auto; font: 14px 'Segoe UI', sans-serif; padding: 6px 8px; background: rgba(10,10,8,0.9); color: #f4efe0; border: 1px solid #c8b270; }
+#emote-wheel { position: absolute; left: 50%; top: 50%; width: 280px; height: 280px; margin: -140px 0 0 -140px; border-radius: 50%; background: rgba(8,8,6,0.72); border: 2px solid #c8b270; pointer-events: none; }
+#emote-wheel span { position: absolute; left: 50%; top: 50%; width: 90px; margin-left: -45px; text-align: center; font-size: 13px; letter-spacing: 1px; color: #e8e4d8; }
+#emote-wheel span.on { color: #f2d98a; font-weight: 700; }
 .menu-row { display: flex; gap: 8px; }
 .menu-row button { flex: 1; padding-left: 12px; padding-right: 12px; }
 .q-label { font-size: 11px; letter-spacing: 3px; color: #c8b270; margin-top: 6px; }
