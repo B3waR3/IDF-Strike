@@ -325,7 +325,7 @@ const player = {
   pos: V(), vel: V(), vy: 0, onGround: true,
   yaw: 0, pitch: 0, recoilP: 0, hp: 100, armor: 100, armorMax: 100, ifaks: 3, frags: 2,
   crouch: false, prone: false, eye: 1.65, sprinting: false, cls: null, weapons: [], cur: 0,
-  kills: 0, headshots: 0, score: 0, shots: 0, hits: 0,
+  kills: 0, headshots: 0, score: 0, killScore: 0, shots: 0, hits: 0,
 };
 const S = {
   state: 'loading', wave: 0, toSpawn: 0, spawnT: 0, intermission: 0, alive: 0, god: false,
@@ -674,6 +674,7 @@ function killEnemy(e, headshot, byNade, dir, blast = false, credit = null) {
   else if (!credit) {
     player.kills++;
     player.score += pts;
+    player.killScore = (player.killScore || 0) + pts;
     if (headshot) player.headshots++;
   }
   if (e.glint) e.glint.visible = false;
@@ -1543,11 +1544,11 @@ function renderScoreboard() {
   if (!el) return;
   el.classList.toggle('hidden', !S.tab);
   if (!S.tab) return;
-  const rows = [{ name: net && net.selfName ? net.selfName() : 'You', kills: player.kills, points: player.score }];
+  const rows = [{ name: net && net.selfName ? net.selfName() : 'You', kills: player.kills, score: player.killScore || 0, points: player.score }];
   const board = S.board || [];
   for (const r of board) if (r.name && r.name !== rows[0].name) rows.push(r);
-  if (net && net.listPeers) for (const p of net.listPeers()) if (!rows.some((r) => r.name === p.name)) rows.push({ name: p.name, kills: p.kills || 0, points: p.score || 0 });
-  el.innerHTML = `<h3>SCORE</h3><table><tr><th>NAME</th><th class="n">KILLS</th><th class="n">POINTS</th></tr>${rows.map((r) => `<tr><td>${r.name}</td><td class="n">${r.kills || 0}</td><td class="n">${r.points || 0}</td></tr>`).join('')}</table>`;
+  if (net && net.listPeers) for (const p of net.listPeers()) if (!rows.some((r) => r.name === p.name)) rows.push({ name: p.name, kills: p.kills || 0, score: p.killScore || 0, points: p.score || 0 });
+  el.innerHTML = `<h3>SCORE</h3><table><tr><th>NAME</th><th>KILLS</th><th>SCORE</th><th>POINTS</th></tr>${rows.map((r) => `<tr><td>${r.name}</td><td class="n">${r.kills || 0}</td><td class="n">${r.score || 0}</td><td class="n">${r.points || 0}</td></tr>`).join('')}</table>`;
 }
 const EMOTES = ['wave', 'salute', 'point', 'cheer', 'dance'];
 function layoutWheel() {
@@ -1691,6 +1692,7 @@ document.addEventListener('mousedown', (e) => {
   if (shopOpen.on) return;
   if (e.button === 0 && S.state === 'dead' && net && net.online) spectateI++;
   if (S.state !== 'playing') return;
+  if (S.wheel) return;
   if (document.pointerLockElement !== canvas) { canvas.requestPointerLock(); return; }
   if (e.button === 0) { mouse.left = true; S.triggerFresh = true; }
   if (e.button === 2) mouse.right = true;
@@ -1707,12 +1709,15 @@ document.addEventListener('wheel', (e) => {
 });
 document.addEventListener('mousemove', (e) => {
   if (S.state !== 'playing' || document.pointerLockElement !== canvas) return;
+  if (S.wheel) {
+    S.wheelAng += e.movementX * 0.012;
+    return;
+  }
   const sens = 0.0022 * (settings.sens / 100) * (camera.fov / lookFov());
   player.yaw -= e.movementX * sens;
   player.pitch -= e.movementY * sens;
   player.pitch = clamp(player.pitch, -1.5, 1.5);
   mouseDX += e.movementX; mouseDY += e.movementY;
-  if (S.wheel) S.wheelAng = Math.atan2(e.clientY - innerHeight / 2, e.clientX - innerWidth / 2);
 });
 function openChat() {
   if (S.state !== 'playing' || S.chat) return;
@@ -1864,7 +1869,7 @@ function deploy(cls) {
   player.pos.copy(world.spawn);
   player.vel.set(0, 0, 0);
   player.vy = 0; player.yaw = 0; player.pitch = 0; player.recoilP = 0; player.crouch = false; player.prone = false; player.eye = 1.65; player.onGround = true;
-  player.kills = player.headshots = player.score = player.shots = player.hits = 0;
+  player.kills = player.headshots = player.score = player.killScore = player.shots = player.hits = 0;
   Object.assign(S, {
     wave: 0, toSpawn: 0, spawnT: 0, intermission: 6, alive: 0, reloading: false, switchT: 0.5, ifakT: 0,
     fireCD: 0, boltT: 0, adsT: 0, bloom: 0, kick: 0, nadeCD: 0, resupplyCD: 0, shake: 0, hurtT: 0, flowT: 0, time: 0, inspectT: -1,
@@ -2337,6 +2342,11 @@ function updateWeapon(dt) {
   );
   camera.rotation.set(player.pitch + player.recoilP + swayP + S.punchP, player.yaw + swayY + S.punchY, Math.sin(S.bobT * 0.5) * 0.004 * (1 - S.adsT) - lean * 0.045);
   camera.updateMatrixWorld();
+  if (S.emote && !S.thirdPerson) {
+    const back = V(Math.sin(player.yaw), 0.15, Math.cos(player.yaw));
+    camera.position.addScaledVector(back, 2.1);
+    camera.lookAt(player.pos.x, player.pos.y + 1.35, player.pos.z);
+  }
 
   // Over-the-shoulder camera, pulled in when a wall is behind the player. Scoped ADS goes back to first person.
   S.tpK = approach(S.tpK, S.thirdPerson && !(d.scope && S.adsT > 0.5) ? 1 : 0, dt * 5);
@@ -2370,7 +2380,7 @@ function updateSeller(dt) {
 function updateBody(dt) {
   const dead = S.state === 'dead';
   // Hidden in first person, and when the camera is squeezed right up against the head.
-  body.root.visible = dead ? S.tpDead : tpActive() && S.camD > 0.6;
+  body.root.visible = dead ? S.tpDead : (tpActive() && S.camD > 0.6) || !!S.emote;
   if (!body.root.visible) return;
   body.root.position.copy(player.pos);
   body.root.rotation.y = player.yaw + Math.PI;
@@ -2820,6 +2830,7 @@ async function boot() {
       player.kills++;
       if (head) player.headshots++;
       player.score += pts || 0;
+      player.killScore = (player.killScore || 0) + (pts || 0);
     },
     notice: matchNote,
     applyVitals(you) {

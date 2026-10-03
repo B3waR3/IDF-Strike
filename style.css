@@ -174,10 +174,11 @@ button.secondary { background: #3a3628; color: #e8e4d8; }
 #spectate div { font-size: 11px; letter-spacing: 1px; color: #b5ad96; }
 #scoreboard { position: absolute; left: 50%; top: 14%; transform: translateX(-50%); min-width: 460px; background: rgba(8,8,6,0.82); border: 1px solid #c8b270; padding: 14px 18px; pointer-events: none; }
 #scoreboard h3 { text-align: center; letter-spacing: 4px; color: #f2d98a; margin-bottom: 8px; }
-#scoreboard table { width: 100%; border-collapse: collapse; font-size: 14px; }
-#scoreboard th { text-align: left; color: #c8b270; font-weight: 600; letter-spacing: 1px; padding-bottom: 6px; }
-#scoreboard td { padding: 3px 8px 3px 0; }
-#scoreboard td.n { text-align: right; font-variant-numeric: tabular-nums; }
+#scoreboard table { width: 100%; border-collapse: collapse; font-size: 14px; table-layout: fixed; }
+#scoreboard th, #scoreboard td { text-align: center; padding: 4px 6px; }
+#scoreboard th:first-child, #scoreboard td:first-child { text-align: left; width: 40%; }
+#scoreboard th { color: #c8b270; font-weight: 600; letter-spacing: 1px; padding-bottom: 6px; }
+#scoreboard td.n { font-variant-numeric: tabular-nums; }
 #bigmap { position: absolute; left: 50%; top: 50%; width: min(70vh, 70vw); height: min(70vh, 70vw); transform: translate(-50%, -50%); background: rgba(8,10,6,0.88); border: 2px solid rgba(200,190,150,0.7); pointer-events: none; }
 #chat-log { position: absolute; left: 24px; bottom: 250px; width: 420px; pointer-events: none; }
 .chat-line { font-size: 14px; color: #f4efe0; background: rgba(0,0,0,0.45); padding: 3px 8px; margin-top: 3px; }
