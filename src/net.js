@@ -385,9 +385,11 @@ export function createNet(hooks) {
       b.body.root.position.set(b.x, b.y, b.z);
       b.body.root.rotation.y = b.yaw + Math.PI;
       if (b.dead) { b.body.update(dt, null); continue; }
-      const fwd = (s.vx || 0) * -Math.sin(s.yaw) + (s.vz || 0) * -Math.cos(s.yaw);
+      const fx = -Math.sin(s.yaw), fz = -Math.cos(s.yaw);
+      const fwd = (s.vx || 0) * fx + (s.vz || 0) * fz;
+      const strafe = (s.vx || 0) * Math.cos(s.yaw) + (s.vz || 0) * -Math.sin(s.yaw);
       b.body.update(dt, {
-        speed: Math.hypot(s.vx || 0, s.vz || 0), back: fwd < -0.3,
+        speed: Math.hypot(s.vx || 0, s.vz || 0), fwd, strafe, back: fwd < -0.3,
         pitch: s.pitch || 0, crouch: !!s.crouch, sprint: !!s.sprint, ads: s.ads || 0,
         reloadP: -1, empty: false, kick: 0, switchK: 0, nade: null,
         knife: s.weapon === 'karambit', stab: -1, prone: !!s.prone, inspect: -1, ifak: -1,

@@ -5,10 +5,12 @@ import { models, makeGun } from './models.js';
 import { shareSkeletons } from './merge.js';
 import { LAYER_HITBOX } from './gfx.js';
 import { TEX } from './effects.js';
-import { ccBones, retargetClips, solveIK, analyzeHand, orientHand, curlFingers } from './rig.js';
+import { ccBones, retargetClips, solveIK, analyzeHand, forearmTwist, orientHand, curlFingers, openFingers } from './rig.js';
 import { makeGrenadeMesh } from './grenade.js';
 import { NADE_TIMING, STAB_TIMING } from './viewmodels.js';
 import { MED_TIMING, BAND_R, makeBandage, newFrame, forearmFrame, wrapPhase, aroundArm, placeBandage, hideBandage } from './bandage.js';
+import { POSES } from './poses.js';
+import { HOLDPOSE } from './holdpose.js';
 
 // Per-faction tints multiplied over the militant model's camo textures (material name -> colour).
 const LOOKS = {
@@ -200,11 +202,56 @@ function plant(model, samples, groundY) {
 const _tq = new THREE.Quaternion(), _tq2 = new THREE.Quaternion(), _tq3 = new THREE.Quaternion();
 function turn(bone, axisW, a) {
   if (!bone || !a) return;
+  rotateWorld(bone, _tq2.setFromAxisAngle(axisW, a));
+}
+function rotateWorld(bone, qW) {
   bone.getWorldQuaternion(_tq);
-  _tq.premultiply(_tq2.setFromAxisAngle(axisW, a));
+  _tq.premultiply(qW);
   bone.parent.getWorldQuaternion(_tq3).invert();
   bone.quaternion.copy(_tq3.multiply(_tq));
   bone.updateMatrixWorld(true);
+}
+
+// Weapon holds posed in Blender on this rig (tools/author-holds.py). A pose stores each bone's
+// world-space turn away from the operator's file pose; local rotations are rebuilt from this rig's
+// own file pose, so the hold lands exactly as posed. `inHand` is the gun frame in the right hand's space.
+const ccShort = (n) => n.replace(/_\d+$/, '').replace(/^CC_Base_/, '');
+function buildHolds(model) {
+  const bones = {};
+  model.traverse((o) => { if (o.isBone) bones[ccShort(o.name)] = o; });
+  model.updateMatrixWorld(true);
+  const rest = new Map();
+  for (const b of Object.values(bones)) rest.set(b, { q: b.quaternion.clone(), w: b.getWorldQuaternion(new THREE.Quaternion()) });
+  const out = {};
+  for (const [id, spec] of Object.entries(HOLDPOSE)) {
+    const turned = new Map();
+    for (const [n, v] of Object.entries(spec.bones)) if (bones[n]) turned.set(bones[n], new THREE.Quaternion(...v));
+    const posed = new Map();
+    const world = (b) => {
+      if (!posed.has(b)) {
+        if (turned.has(b)) posed.set(b, turned.get(b).clone().multiply(rest.get(b).w));
+        else if (b.parent?.isBone) posed.set(b, world(b.parent).clone().multiply(rest.get(b).q));
+        else posed.set(b, rest.get(b).w.clone());
+      }
+      return posed.get(b);
+    };
+    const local = [];
+    for (const b of turned.keys()) {
+      const pw = b.parent.isBone ? world(b.parent) : b.parent.getWorldQuaternion(new THREE.Quaternion());
+      local.push([b, pw.clone().invert().multiply(world(b))]);
+    }
+    for (const [b, lq] of local) b.quaternion.copy(lq);
+    model.updateMatrixWorld(true);
+    const gun = new THREE.Matrix4().compose(W3(...spec.gun.p), new THREE.Quaternion(...spec.gun.q), W3(1, 1, 1));
+    const inHand = new THREE.Matrix4().copy(bones.R_Hand.matrixWorld).invert().multiply(gun);
+    let off = 0;
+    for (const [n, p] of Object.entries(spec.check)) if (bones[n]) off = Math.max(off, bones[n].getWorldPosition(W3()).distanceTo(W3(...p)));
+    if (off > 0.01) console.warn(`hold ${id}: rebuilt pose is ${off.toFixed(3)} m off the Blender pose`);
+    for (const [b, r] of rest) b.quaternion.copy(r.q);
+    model.updateMatrixWorld(true);
+    out[id] = { local, inHand, off };
+  }
+  return out;
 }
 
 // AnimationMixer only writes a bone when its sampled value changes, so procedural offsets would
@@ -515,11 +562,20 @@ export function createPlayerBody() {
   });
   const B = ccBones(model);
   model.updateMatrixWorld(true);
+  const holds = buildHolds(model);
   const legRest = {};
   for (const n of ['Hips', 'LeftUpLeg', 'RightUpLeg', 'LeftLeg', 'RightLeg', 'LeftFoot', 'RightFoot']) {
     if (B[n]) legRest[n] = B[n].quaternion.clone();
   }
+  const torsoRest = {};
+  for (const n of ['Spine', 'Spine1', 'Spine2', 'Neck', 'NeckTwist02', 'Head', 'LeftShoulder', 'RightShoulder']) {
+    if (B[n]) torsoRest[n] = B[n].quaternion.clone();
+  }
+  // Which way the face points, in the head bone's local space, while the body is standing straight.
+  const headFaceL = new THREE.Vector3(0, 0, 1).applyQuaternion(B.Head.getWorldQuaternion(new THREE.Quaternion()).invert());
   const HR = analyzeHand(B, 'R'), HL = analyzeHand(B, 'L');
+  forearmTwist(HR, B, 'R');
+  forearmTwist(HL, B, 'L');
   const death = createDeath(model, B);
   const loco = locomotion(model, clipsFor('operator'));
   const pose = poseCache(model);
@@ -576,9 +632,9 @@ export function createPlayerBody() {
   }
 
   const gripW = W3(), foreW = W3(), poleR = W3(), poleL = W3(), handW = W3(), a = W3(), b = W3();
-  const fwdW = W3(), upW = W3(), rightW = W3(), tmp = W3(), X = W3(), Y = W3(), local = W3();
+  const fwdW = W3(), upW = W3(), rightW = W3(), tmp = W3(), X = W3(), Y = W3(), Z = W3(), local = W3();
   const q = new THREE.Quaternion();
-  let aim = 0, lower = 0, crouchK = 0, proneK = 0, crawlT = 0, flashT = 0;
+  let aim = 0, lower = 0, crouchK = 0, proneK = 0, crawlT = 0, flashT = 0, standK = 0, strafePhase = 0;
 
   // Grenade throw in root space (faces +Z, right hand is -X): pin pull at the chest, cock back over
   // the shoulder, overhand release, follow-through. Timing matches the first-person animation.
@@ -706,10 +762,6 @@ export function createPlayerBody() {
     }
     root.updateMatrixWorld(true);
     const { gun } = cur;
-    gun.root.getWorldQuaternion(q);
-    fwdW.set(0, 0, -1).applyQuaternion(q);
-    upW.set(0, 1, 0).applyQuaternion(q);
-    rightW.set(1, 0, 0).applyQuaternion(q);
     gun.root.localToWorld(gripW.copy(gun.grip));
     root.localToWorld(handW.copy(b));
     // Elbows out to the sides and slightly forward, not folded into the back.
@@ -725,12 +777,12 @@ export function createPlayerBody() {
     curlFingers(HL, 0.4, 0.25);
   }
 
-  function leftTarget(p, empty, out) {
+  function leftTarget(p, empty, out, rest = null) {
     // Reload: hand to the magazine, old mag to the pouch, fresh mag in, slap, back to the handguard.
     const { gun, magC } = cur;
     const magW = gun.root.localToWorld(a.copy(magC).add(local.set(0, -0.06, 0)));
     const pouchW = root.localToWorld(b.copy(POUCH).setY(POUCH.y - crouchK * 0.35));
-    const rest = cur.pistol ? gun.root.localToWorld(tmp.copy(gun.grip).add(local.set(-0.03, -0.01, 0))) : foreW;
+    rest ||= cur.pistol ? gun.root.localToWorld(tmp.copy(gun.grip).add(local.set(-0.03, -0.01, 0))) : foreW;
     const keys = [[0, rest], [0.15, magW], [0.32, pouchW], [0.45, pouchW], [0.62, magW], [0.68, magW], [empty ? 0.86 : 0.8, rest], [1, rest]];
     let i = 0;
     while (i < keys.length - 2 && p >= keys[i + 1][0]) i++;
@@ -739,25 +791,134 @@ export function createPlayerBody() {
     return p > 0.15 && p < 0.66;
   }
 
+  // Blender hold: the authored upper body with the gun in the right hand. The torso then turns so
+  // the barrel points where the player aims, and both upper arms swing together about the line
+  // through the shoulder joints for the rest of the pitch, sprint lowering, recoil and the reload
+  // tilt. Rotating both arms about one shared line keeps the hands on the gun.
+  const gunM = new THREE.Matrix4(), frameInv = new THREE.Matrix4(), rootInv = new THREE.Matrix4();
+  const want = W3(), lineW = W3(), dq = new THREE.Quaternion(), dqk = new THREE.Quaternion(), handQ = new THREE.Quaternion();
+  const gunDir = (H, out) => out.set(0, 0, -1).transformDirection(gunM.multiplyMatrices(B.RightHand.matrixWorld, H.inHand));
+  function holdPose(H, st, p, e, reloading, dy) {
+    for (const [bone, lq] of H.local) bone.quaternion.copy(lq);
+    root.updateMatrixWorld(true);
+    if (proneK > 0.01) {
+      // The hold replaced the prone back arch and raised head; put them back.
+      turn(B.Spine1, X, -0.45 * proneK);
+      turn(B.Head, X, -1.25 * proneK);
+    }
+    root.getWorldQuaternion(q);
+    // Looking down mostly lowers the arms; bending the back that far reads as a bow.
+    p = Math.max(-0.8, Math.min(0.85, p));
+    const torso = p > 0 ? 0.6 : 0.35;
+    const up = p * torso;
+    want.set(0, Math.sin(up), Math.cos(up)).applyQuaternion(q);
+    if (proneK > 0.01) {
+      // Lying down, the posed hold points into the ground. Swing both arms up about the shoulder
+      // line until the barrel is level, as in a prone firing position; the spine keeps the rest.
+      lineW.subVectors(B.LeftArm.getWorldPosition(a), B.RightArm.getWorldPosition(b)).normalize();
+      gunDir(H, tmp).addScaledVector(lineW, -tmp.dot(lineW)).normalize();
+      a.copy(want).addScaledVector(lineW, -want.dot(lineW)).normalize();
+      const ang = Math.atan2(b.crossVectors(tmp, a).dot(lineW), tmp.dot(a)) * proneK;
+      turn(B.RightArm, lineW, ang);
+      turn(B.LeftArm, lineW, ang);
+    }
+    for (const [bone, k] of [[B.Spine1, 0.5], [B.Spine2, 1]]) {
+      dq.setFromUnitVectors(gunDir(H, tmp), want);
+      rotateWorld(bone, dqk.identity().slerp(dq, k));
+    }
+    const swing = p * (1 - torso) - lower * 0.8 + st.kick * 0.06 - e * 0.25;
+    lineW.subVectors(B.LeftArm.getWorldPosition(a), B.RightArm.getWorldPosition(b)).normalize();
+    turn(B.RightArm, lineW, -swing);
+    turn(B.LeftArm, lineW, -swing);
+    turn(B.Head, X, -p * (1 - torso) * 0.7);
+    // Mag change: cant the gun so the magazine well turns toward the support hand.
+    if (e > 0) turn(B.RightHand, gunDir(H, tmp), e * (cur.pistol ? -0.35 : 0.5));
+
+    // gunPivot -> gunFrame -> gun.root, placed so gun.root lands where the right hand holds it.
+    gunM.multiplyMatrices(B.RightHand.matrixWorld, H.inHand);
+    cur.gun.root.updateMatrix();
+    gunFrame.updateMatrix();
+    frameInv.multiplyMatrices(gunFrame.matrix, cur.gun.root.matrix).invert();
+    gunM.multiply(frameInv).premultiply(rootInv.copy(root.matrixWorld).invert());
+    gunM.decompose(gunPivot.position, gunPivot.quaternion, gunPivot.scale);
+    gunPivot.scale.set(1, 1, 1);
+    gunPivot.updateMatrixWorld(true);
+
+    let attached = false;
+    if (reloading) {
+      B.LeftHand.getWorldPosition(foreW);
+      B.LeftHand.getWorldQuaternion(handQ);
+      attached = leftTarget(st.reloadP, st.empty, handW, foreW);
+      root.localToWorld(poleL.set(0.48, 1.05 + dy, 0.2));
+      solveIK(B.LeftArm, B.LeftForeArm, B.LeftHand, handW, poleL);
+      // Off its grip the hand turns palm-down to take the magazine.
+      const away = smooth(handW.distanceTo(foreW) / 0.08);
+      cur.gun.root.getWorldQuaternion(q);
+      a.copy(HL.alongL).applyQuaternion(handQ).lerp(fwdW.set(0, 0, -1).applyQuaternion(q), away);
+      b.copy(HL.palmL).applyQuaternion(handQ).lerp(upW.set(0, -1, 0).applyQuaternion(q), away);
+      orientHand(HL, a, b);
+    }
+    cur.gun.mag.position.copy(cur.magBase);
+    if (attached) {
+      cur.gun.root.worldToLocal(local.copy(handW));
+      cur.gun.mag.position.add(local.sub(cur.magC));
+    }
+    gunPivot.visible = true;
+  }
+
   function emoteArms(kind, t, drop_) {
     gunPivot.visible = false;
-    const s = Math.sin(t * 5);
-    const hands = {
-      wave: [[-0.42, 1.35 + Math.max(0, s) * 0.5, 0.2], [0.28, 0.95, 0.16]],
-      salute: [[-0.12, 1.58, 0.22], [0.28, 0.95, 0.16]],
-      point: [[-0.18, 1.4, 0.62], [0.28, 0.95, 0.16]],
-      cheer: [[-0.36, 1.72, 0.12], [0.36, 1.72, 0.12]],
-      dance: [[-0.42, 1.15 + s * 0.4, 0.2], [0.42, 1.15 - s * 0.4, 0.2]],
-    };
-    const pair = hands[kind] || hands.wave;
-    root.localToWorld(gripW.set(pair[0][0], pair[0][1] + drop_, pair[0][2]));
-    root.localToWorld(handW.set(pair[1][0], pair[1][1] + drop_, pair[1][2]));
-    root.localToWorld(poleR.set(-0.75, 1.35, 0.25));
-    root.localToWorld(poleL.set(0.75, 1.35, 0.25));
+    gunFrame.visible = false;
+    const anim = POSES.emotes?.[kind] || POSES.emotes?.wave;
+    if (anim?.keys?.length) {
+      const u = Math.min(0.999, (t % anim.dur) / anim.dur);
+      const keys = anim.keys;
+      let i = 0;
+      while (i < keys.length - 2 && u >= keys[i + 1].t) i++;
+      const ka = keys[i], kb = keys[i + 1] || ka;
+      const s = smooth((u - ka.t) / Math.max(1e-4, (kb.t - ka.t) || 1));
+      const ra = ka.right, rb = kb.right || ra;
+      const la = ka.left, lb = kb.left || la;
+      a.set(ra[0] + (rb[0] - ra[0]) * s, ra[1] + (rb[1] - ra[1]) * s + drop_, ra[2] + (rb[2] - ra[2]) * s);
+      b.set(la[0] + (lb[0] - la[0]) * s, la[1] + (lb[1] - la[1]) * s + drop_, la[2] + (lb[2] - la[2]) * s);
+    } else {
+      const s = Math.sin(t * 5);
+      a.set(-0.42, 1.35 + Math.max(0, s) * 0.5 + drop_, 0.2);
+      b.set(0.28, 0.95 + drop_, 0.16);
+    }
+    root.localToWorld(gripW.copy(a));
+    root.localToWorld(handW.copy(b));
+    root.localToWorld(poleR.set(-0.7, 1.35 + drop_, 0.15));
+    root.localToWorld(poleL.set(0.55, 1.1 + drop_, 0.05));
     solveIK(B.RightArm, B.RightForeArm, B.RightHand, gripW, poleR);
     solveIK(B.LeftArm, B.LeftForeArm, B.LeftHand, handW, poleL);
-    curlFingers(HR, 0.4, 0.2);
-    curlFingers(HL, 0.4, 0.2);
+    root.getWorldQuaternion(q);
+    // Bind fingers are already a fist; openFingers lerps them to local identity (CC open hand).
+    if (kind === 'point') {
+      orientHand(HR, tmp.set(0, 0, 1).applyQuaternion(q), a.set(0, -1, 0).applyQuaternion(q));
+      orientHand(HL, tmp.set(0, -0.85, 0.2).applyQuaternion(q), a.set(0.35, 0.1, 0.9).applyQuaternion(q));
+      openFingers(HR, 0.05, 1, 0.15); // fist + index out
+      openFingers(HL, 0.85, 0.85, 0.7);
+    } else if (kind === 'salute') {
+      // Tips toward the brow (inward across the temple), palm down — blade faces the camera.
+      orientHand(HR, tmp.set(0.96, 0.25, 0.05).applyQuaternion(q), a.set(0.05, -0.98, 0.05).applyQuaternion(q));
+      orientHand(HL, tmp.set(0, -0.95, 0.2).applyQuaternion(q), a.set(0.35, 0.1, 0.9).applyQuaternion(q));
+      openFingers(HR, 1, 1, 0.9);
+      openFingers(HL, 0.85, 0.85, 0.7);
+    } else if (kind === 'wave') {
+      orientHand(HR, tmp.set(0.05, 0.95, 0.2).applyQuaternion(q), a.set(0, 0.1, 1).applyQuaternion(q));
+      orientHand(HL, tmp.set(0, -0.95, 0.2).applyQuaternion(q), a.set(0.35, 0.1, 0.9).applyQuaternion(q));
+      openFingers(HR, 1, 1, 0.85);
+      openFingers(HL, 0.85, 0.85, 0.7);
+    } else if (kind === 'cheer') {
+      orientHand(HR, tmp.set(-0.1, 1, 0.05).applyQuaternion(q), a.set(0.25, 0, 0.97).applyQuaternion(q));
+      orientHand(HL, tmp.set(0.1, 1, 0.05).applyQuaternion(q), a.set(-0.25, 0, 0.97).applyQuaternion(q));
+      openFingers(HR, 1, 1, 0.85);
+      openFingers(HL, 1, 1, 0.85);
+    } else {
+      openFingers(HR, 0.9, 0.9, 0.75);
+      openFingers(HL, 0.9, 0.9, 0.75);
+    }
   }
 
   return {
@@ -790,7 +951,11 @@ export function createPlayerBody() {
       if (!cur) return;
       flashT -= dt;
       if (flashT <= 0) flash.visible = false;
-      loco.update(dt, st.prone ? 0 : st.speed, st.back ? -1 : 1);
+      const fwdAbs = Math.abs(st.fwd || 0), sideAbs = Math.abs(st.strafe || 0);
+      const lateral = sideAbs / Math.max(0.2, sideAbs + fwdAbs);
+      // Sideways movement drops the forward walk so the legs can step to the side instead.
+      const gait = st.prone ? 0 : Math.hypot(fwdAbs, sideAbs) * (1 - Math.min(1, lateral));
+      loco.update(dt, gait, (st.fwd || 0) < -0.3 ? -1 : 1);
       pose.save();
       model.position.set(0, 0, 0);
       model.rotation.set(0, 0, 0);
@@ -798,17 +963,39 @@ export function createPlayerBody() {
       model.getWorldQuaternion(q);
       X.set(1, 0, 0).applyQuaternion(q); Y.set(0, 1, 0).applyQuaternion(q);
 
-      // Crouch folds the legs. Prone lays the rig on its stomach and crawls the knees.
-      crouchK += ((st.crouch ? 1 : 0) - crouchK) * Math.min(1, dt * 8);
+      // Crouch folds the legs. Emotes stand up so the gesture reads; prone still wins.
+      crouchK += (((st.crouch && !st.emote) ? 1 : 0) - crouchK) * Math.min(1, dt * 8);
       proneK += ((st.prone ? 1 : 0) - proneK) * Math.min(1, dt * 5);
       if (crouchK > 0.01) {
         const k = crouchK * (1 - proneK);
+        // The walk clip already lifts a thigh. A full extra knee bend on top of that step folds the shin into the chest.
+        const stride = Math.min(1, (st.speed || 0) / 2.2);
+        const hip = -0.9 * k * (1 - stride * 0.35);
+        const knee = 1.35 * k * (1 - stride * 0.7);
         for (const s of ['Left', 'Right']) {
-          turn(B[s + 'UpLeg'], X, -1.25 * k);
-          turn(B[s + 'Leg'], X, 2.0 * k);
-          turn(B[s + 'Foot'], X, -0.7 * k);
+          turn(B[s + 'UpLeg'], X, hip);
+          turn(B[s + 'Leg'], X, knee);
+          turn(B[s + 'Foot'], X, -0.45 * k);
         }
-        turn(B.Spine1, X, 0.25 * k);
+        // Knees out, so they pass beside the belly instead of through it.
+        turn(B.LeftUpLeg, Y, -0.22 * k);
+        turn(B.RightUpLeg, Y, 0.22 * k);
+        turn(B.Spine1, X, 0.18 * k);
+      }
+      // Sideways steps: the leading leg reaches out to the side and the other one follows.
+      if (sideAbs > 0.35 && proneK < 0.25) {
+        strafePhase += dt * (8 + sideAbs * 1.4);
+        const step = Math.min(1, sideAbs / 2.6) * (1 - proneK);
+        const s = Math.sin(strafePhase);
+        const sign = Math.sign(st.strafe);
+        const leadR = sign > 0 ? Math.max(0, s) : Math.max(0, -s);
+        const leadL = sign > 0 ? Math.max(0, -s) : Math.max(0, s);
+        Z.crossVectors(X, Y).normalize();
+        turn(B.RightUpLeg, Z, -0.28 * leadR * step);
+        turn(B.LeftUpLeg, Z, 0.28 * leadL * step);
+        turn(B.RightLeg, X, 0.16 * leadR * step);
+        turn(B.LeftLeg, X, 0.16 * leadL * step);
+        turn(B.Hips, Z, -0.04 * sign * step);
       }
       if (proneK > 0.01) {
         crawlT += dt * (1.2 + st.speed * 2.2);
@@ -833,7 +1020,27 @@ export function createPlayerBody() {
       plant(model, proneK > 0.35 ? [...feet, [B.Hips, 0.1], [B.Spine2, 0.11], [B.Head, 0.13]] : feet, root.position.y);
       if (proneK > 0.8) model.position.y += 0.03;
       const drop_ = model.position.y;
+      // Rise out of the rifle hunch when an emote starts, and settle back in when it ends.
+      standK = Math.min(1, Math.max(0, standK + (st.emote ? 1 : -1) * dt / 0.4));
+      const raiseChest = () => {
+        if (standK < 0.001 || proneK >= 0.35) return;
+        const headFlat = (out) => {
+          B.Head.getWorldQuaternion(q);
+          out.copy(headFaceL).applyQuaternion(q);
+          out.y = 0;
+          return out.lengthSq() > 1e-8 ? out.normalize() : out.set(0, 0, 1);
+        };
+        headFlat(fwdW);
+        for (const n of Object.keys(torsoRest)) B[n].quaternion.slerp(torsoRest[n], standK);
+        model.updateMatrixWorld(true);
+        headFlat(rightW);
+        const ang = Math.atan2(rightW.z * fwdW.x - rightW.x * fwdW.z, rightW.x * fwdW.x + rightW.z * fwdW.z);
+        if (B.Spine) turn(B.Spine, Y, ang);
+        root.updateMatrixWorld(true);
+      };
       if (cur.unarmed) {
+        raiseChest();
+        if (st.emote) { emoteArms(st.emote, st.emoteT || 0, drop_); return; }
         gunFrame.visible = false;
         nade.root.visible = false;
         hideBandage(kit);
@@ -862,6 +1069,8 @@ export function createPlayerBody() {
       turn(B.Spine2, Y, (cur.pistol ? -0.1 : -0.35 * (1 - lower)) * (1 - proneK));
       turn(B.Head, Y, cur.pistol ? 0.1 : 0.3 * (1 - lower));
       turn(B.Head, X, -p * 0.35 + (cur.pistol ? 0 : 0.18 * st.ads));
+      raiseChest();
+      if (st.emote) { emoteArms(st.emote, st.emoteT || 0, drop_); return; }
 
       const bandaging = st.ifak >= 0 && proneK < 0.5;
       gunFrame.visible = !st.nade && !st.knife && !bandaging;
@@ -871,15 +1080,22 @@ export function createPlayerBody() {
       if (bandaging) { medPose(st.ifak, drop_); return; }
       if (st.knife) { knifePose(st, drop_); return; }
 
-      // Gun pose: shouldered (rifles) or extended (pistols), tilted during reloads.
       const reloading = st.reloadP >= 0;
       const e = reloading ? smooth(st.reloadP / 0.12) * smooth((1 - st.reloadP) / 0.14) : 0;
+      const hold = holds[PLAYER_GUN[cur.id]];
+      if (hold) { holdPose(hold, st, p, e, reloading, drop_); return; }
+
+      // A weapon without a Blender hold: gun at the shoulder pocket, hands IK onto its markers.
       gunPivot.position.copy(cur.pistol ? PISTOL_AT : POCKET);
       gunPivot.position.y += drop_;
       if (proneK > 0.01) gunPivot.position.lerp(local.set(-0.16, 0.22, 0.62), proneK);
       gunPivot.position.z -= st.kick * 0.04;
       if (cur.pistol) gunPivot.position.z -= e * 0.12;
-      gunPivot.rotation.set(-p + lower * 0.7 + e * 0.35, lower * 0.6 + e * (cur.pistol ? -0.2 : 0.25), e * (cur.pistol ? -0.4 : 0.55));
+      gunPivot.rotation.set(
+        -p + lower * 0.7 + e * 0.35,
+        lower * 0.6 + e * (cur.pistol ? -0.2 : 0.25),
+        e * (cur.pistol ? -0.4 : 0.55),
+      );
       root.updateMatrixWorld(true);
 
       const { gun } = cur;
@@ -908,8 +1124,7 @@ export function createPlayerBody() {
         gun.root.worldToLocal(local.copy(handW));
         gun.mag.position.add(local.sub(cur.magC));
       }
-      if (st.emote) emoteArms(st.emote, st.emoteT || 0, drop_);
-      else gunPivot.visible = true;
+      gunPivot.visible = true;
     },
   };
 }

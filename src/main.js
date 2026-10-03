@@ -335,7 +335,7 @@ const S = {
   adsT: 0, bloom: 0, kick: 0, nadeCD: 0, resupplyCD: 0, bobT: 0, shake: 0, sprintT: 0,
   breath: 4, swayT: 0, flashT: 0, hurtT: 0, flowT: 0, time: 0, msgT: 0, triggerFresh: false,
   supp: 0, flashW: 0, landDip: 0, airVy: 0, lastStep: 0, punchP: 0, punchY: 0, beatT: 0, sunT: 0, inSun: 1,
-  thirdPerson: localStorage.getItem('idf-tp') === '1', tpK: 0, camD: 2, tpDead: false, deadT: 0, inspectT: -1,
+  thirdPerson: localStorage.getItem('idf-tp') === '1', tpFront: false, tpK: 0, camD: 2, tpDead: false, deadT: 0, inspectT: -1,
 };
 // Third-person body; created once the models have loaded.
 let body = null;
@@ -995,6 +995,14 @@ const aimO = V(), aimQ = new THREE.Quaternion(), aimM = new THREE.Matrix4();
 function aimBasis() {
   if (!tpActive()) { aimO.copy(camera.position); aimQ.copy(camera.quaternion); return; }
   aimO.set(player.pos.x, player.pos.y + player.eye, player.pos.z);
+  // Front cam sits ahead of the player looking back at them — camera forward points behind the body.
+  if (S.tpFront) {
+    const pitch = player.pitch + player.recoilP;
+    const cy = Math.cos(pitch), sy = Math.sin(pitch);
+    const f = V(-Math.sin(player.yaw) * cy, sy, -Math.cos(player.yaw) * cy);
+    aimQ.setFromRotationMatrix(aimM.lookAt(aimO, aimO.clone().add(f), UP));
+    return;
+  }
   const f = V(0, 0, -1).applyQuaternion(camera.quaternion);
   const start = camera.position.clone().addScaledVector(f, Math.max(0, aimO.clone().sub(camera.position).dot(f)));
   const wh = raycastWorld(start, f, 800);
@@ -1097,7 +1105,7 @@ function resolveMelee(at, credit) {
   else showHitmarker(willKill, back);
 }
 function tryStab() {
-  if (stab.t >= 0 || nade.phase || S.switchT > 0 || S.ifakT > 0 || player.sprinting || S.fireCD > 0 || S.inspectT >= 0) return;
+  if (S.emote || S.wheel || stab.t >= 0 || nade.phase || S.switchT > 0 || S.ifakT > 0 || player.sprinting || S.fireCD > 0 || S.inspectT >= 0) return;
   if (!S.triggerFresh) return;
   S.triggerFresh = false;
   stab.t = 0;
@@ -1530,14 +1538,28 @@ function drawBigMap() {
   c.fillRect(0, 0, W, W);
   const px = (x) => (x + HALF) / span * W;
   const pz = (z) => (z + HALF) / span * W;
+  const u = W / span;
   for (const r of mapRects) {
-    c.fillStyle = r.kind === 'b' ? 'rgba(170,180,150,0.75)' : 'rgba(120,125,105,0.65)';
+    c.fillStyle = r.kind === 'b' ? 'rgba(170,180,150,0.75)' : r.kind === 't' ? 'rgba(110,168,255,0.9)' : 'rgba(120,125,105,0.65)';
     c.fillRect(px(r.x), pz(r.z), r.w / span * W, r.d / span * W);
   }
-  const mark = (x, z, color) => { c.fillStyle = color; c.beginPath(); c.arc(px(x), pz(z), 5, 0, 7); c.fill(); };
-  mark(player.pos.x, player.pos.z, '#fff');
-  if (net && net.online) for (const b of net.peerMarks()) mark(b.x, b.z, '#9ad0ff');
-  for (const b of squad.bots) if (b.alive) mark(b.pos.x, b.pos.z, '#6ec8ff');
+  c.strokeStyle = '#ff9a3c';
+  c.lineWidth = 2;
+  for (const sh of shafts) { c.beginPath(); c.arc(px(sh.x), pz(sh.z), 2 * u, 0, 7); c.stroke(); }
+  const rp = world.resupplyPos;
+  if (rp) {
+    c.fillStyle = '#6ea8ff';
+    const s = 2.4 * u;
+    c.fillRect(px(rp.x) - s / 2, pz(rp.z) - s / 2, s, s);
+  }
+  const dot = (x, z, color, r) => { c.fillStyle = color; c.beginPath(); c.arc(px(x), pz(z), r * u, 0, 7); c.fill(); };
+  for (const e of (net && net.isClient ? net.enemyMarks() : enemies)) {
+    if (e.dead || e.emerge > 0) continue;
+    dot(e.pos.x, e.pos.z, (e.sniper || e.t?.sniper) ? '#ffcf3c' : '#ff4a3c', 1.6);
+  }
+  if (net && net.online) for (const b of net.peerMarks()) dot(b.x, b.z, '#9ad0ff', 1.5);
+  for (const b of squad.bots) dot(b.pos.x, b.pos.z, b.alive ? '#6ec8ff' : 'rgba(110,200,255,0.35)', 1.5);
+  dot(player.pos.x, player.pos.z, '#fff', 1.8);
 }
 function renderScoreboard() {
   const el = $('scoreboard');
@@ -1667,9 +1689,19 @@ document.addEventListener('keydown', (e) => {
       if (player.onGround || player.prone) { player.prone = !player.prone; if (player.prone) player.crouch = false; SFX.playGear(); }
       break;
     case 'KeyV':
-      S.thirdPerson = !S.thirdPerson;
+      if (!S.thirdPerson) {
+        S.thirdPerson = true;
+        S.tpFront = false;
+        flashMsg('THIRD PERSON', 0.8);
+      } else if (!S.tpFront) {
+        S.tpFront = true;
+        flashMsg('FRONT VIEW', 0.8);
+      } else {
+        S.thirdPerson = false;
+        S.tpFront = false;
+        flashMsg('FIRST PERSON', 0.8);
+      }
       localStorage.setItem('idf-tp', S.thirdPerson ? '1' : '0');
-      flashMsg(S.thirdPerson ? 'THIRD PERSON' : 'FIRST PERSON', 0.8);
       break;
     case 'Space':
       if (player.prone) { player.prone = false; SFX.playGear(); break; }
@@ -1686,6 +1718,7 @@ document.addEventListener('keyup', (e) => {
     S.wheel = false;
     S.emote = S.wheelPick || 'wave';
     S.emoteT = 0;
+    stab.t = -1;
   }
 });
 document.addEventListener('mousedown', (e) => {
@@ -2349,8 +2382,20 @@ function updateWeapon(dt) {
   }
 
   // Over-the-shoulder camera, pulled in when a wall is behind the player. Scoped ADS goes back to first person.
-  S.tpK = approach(S.tpK, S.thirdPerson && !(d.scope && S.adsT > 0.5) ? 1 : 0, dt * 5);
-  if (S.tpK > 0) {
+  // Front view stays put so the face and the weapon grip stay in frame.
+  S.tpK = approach(S.tpK, S.tpFront || (S.thirdPerson && !(d.scope && S.adsT > 0.5)) ? 1 : 0, dt * 5);
+  if (S.tpFront && S.tpK > 0.02) {
+    const k = S.tpK * S.tpK * (3 - 2 * S.tpK);
+    const fx = -Math.sin(player.yaw), fz = -Math.cos(player.yaw);
+    const dist = 2.7;
+    const origin = V(player.pos.x, player.pos.y + 1.15, player.pos.z);
+    const dir = V(fx, 0.08, fz).normalize();
+    const hit = raycastWorld(origin, dir, dist + 0.3);
+    const d = (hit ? Math.max(0.7, hit.t - 0.25) : dist) * k;
+    camera.position.set(player.pos.x + fx * d, player.pos.y + 1.2 + 0.08 * d, player.pos.z + fz * d);
+    camera.lookAt(player.pos.x, player.pos.y + 1.05, player.pos.z);
+    camera.updateMatrixWorld();
+  } else if (S.tpK > 0) {
     const k = S.tpK * S.tpK * (3 - 2 * S.tpK);
     tpOff.set(lerp(0.55, 0.42, S.adsT), 0.14, lerp(2.3, 1.2, S.adsT)).applyQuaternion(camera.quaternion);
     const len = tpOff.length();
@@ -2387,9 +2432,11 @@ function updateBody(dt) {
   if (dead) { body.update(dt, null); return; }
   const w = curW();
   body.setWeapon(w.id);
-  const fwd = player.vel.x * -Math.sin(player.yaw) + player.vel.z * -Math.cos(player.yaw);
+  const fx = -Math.sin(player.yaw), fz = -Math.cos(player.yaw);
+  const fwd = player.vel.x * fx + player.vel.z * fz;
+  const strafe = player.vel.x * Math.cos(player.yaw) + player.vel.z * -Math.sin(player.yaw);
   body.update(dt, {
-    speed: Math.hypot(player.vel.x, player.vel.z), back: fwd < -0.3,
+    speed: Math.hypot(player.vel.x, player.vel.z), fwd, strafe, back: fwd < -0.3,
     pitch: player.pitch + player.recoilP, crouch: player.crouch, sprint: player.sprinting, ads: S.adsT,
     reloadP: S.reloading ? Math.min(1, S.reloadT / S.reloadDur) : -1, empty: S.reloadEmpty,
     kick: S.kick, switchK: S.switchT > 0 || S.ifakT > 0 ? 1 : 0,

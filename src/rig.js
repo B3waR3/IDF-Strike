@@ -190,11 +190,24 @@ export function analyzeHand(B, side) {
         axisW = new THREE.Vector3().crossVectors(dir.normalize(), palm).normalize();
       } else axisW = across.clone();
       // Pick the rotation sign that swings the finger toward the palm.
-      const child = b.children.find((c) => c.isBone) || b;
-      const off = pos(child).sub(pos(b));
+      const child = b.children.find((c) => c.isBone);
+      const origin = pos(b);
+      // A fingertip has no child bone; it carries on in the direction of the joint before it.
+      const off = child ? pos(child).sub(origin) : origin.clone().sub(pos(b.parent));
       const moved = off.clone().applyAxisAngle(axisW, 0.3);
       const sign = moved.sub(off).dot(palm) >= 0 ? 1 : -1;
-      H.joints.push({ b, rest: b.quaternion.clone(), axis: axisW.applyQuaternion(bq).multiplyScalar(sign), thumb: f === 'Thumb', index: f === 'Index', i });
+      // How far this joint is already bent in the bind pose, so a curl of 0 can mean a straight finger.
+      let restCurl = 0;
+      if (b.parent) {
+        const parentDir = origin.clone().sub(b.parent.getWorldPosition(new THREE.Vector3()));
+        if (parentDir.lengthSq() > 1e-8 && off.lengthSq() > 1e-8) {
+          parentDir.normalize();
+          const childDir = off.clone().normalize();
+          const flex = axisW.clone().multiplyScalar(sign);
+          restCurl = Math.atan2(new THREE.Vector3().crossVectors(parentDir, childDir).dot(flex), Math.min(1, Math.max(-1, parentDir.dot(childDir))));
+        }
+      }
+      H.joints.push({ b, rest: b.quaternion.clone(), restCurl, axis: axisW.applyQuaternion(bq).multiplyScalar(sign), thumb: f === 'Thumb', index: f === 'Index', i });
     }
   }
   return H;
@@ -240,11 +253,32 @@ export function orientHand(H, alongW, palmW) {
   H.hand.parent.updateMatrixWorld(true);
 }
 // `open` (0..1) relaxes every finger except the index, e.g. to let a karambit spin on the index finger.
-export function curlFingers(H, curl, thumbCurl = curl * 0.5, spread = 1, open = 0) {
+// `fromStraight` measures curl from an open hand. The bind pose is already half-closed, so without it a small curl stays a fist.
+export function curlFingers(H, curl, thumbCurl = curl * 0.5, spread = 1, open = 0, fromStraight = false, indexCurl = null) {
   for (const j of H.joints) {
-    const c = j.index ? curl : curl + (0.12 - curl) * open, tc = thumbCurl + (0.1 - thumbCurl) * open;
-    const a = j.thumb ? tc * (j.i === 1 ? 0.3 : 0.8) : c * (j.i === 1 ? 1 : j.i === 2 ? 1.25 : 0.9) * spread;
+    const c = j.index ? (indexCurl == null ? curl : indexCurl) : curl + (0.12 - curl) * open, tc = thumbCurl + (0.1 - thumbCurl) * open;
+    let a = j.thumb ? tc * (j.i === 1 ? 0.3 : 0.8) : c * (j.i === 1 ? 1 : j.i === 2 ? 1.25 : 0.9) * spread;
+    if (fromStraight) a -= j.restCurl || 0;
     j.b.quaternion.copy(j.rest).multiply(_q.setFromAxisAngle(j.axis, a));
+  }
+  H.hand.updateMatrixWorld(true);
+}
+// CC bind fingers are already a fist; local identity is the T-pose open. `amount` 0 = fist (bind), 1 = flat open
+// (identity plus a little reverse curl — the skinned glove still reads as a claw at pure identity).
+const _openQ = new THREE.Quaternion();
+export function openFingers(H, amount = 1, indexAmount = null, thumbAmount = null) {
+  const a = Math.min(1, Math.max(0, amount));
+  const idx = indexAmount == null ? a : Math.min(1, Math.max(0, indexAmount));
+  const th = thumbAmount == null ? a : Math.min(1, Math.max(0, thumbAmount));
+  for (const j of H.joints) {
+    const t = j.index ? idx : j.thumb ? th : a;
+    j.b.quaternion.slerpQuaternions(j.rest, _openQ.identity(), t);
+    // Flatten past T-pose once mostly open; skip thumbs (they look wrong hyperextended).
+    if (!j.thumb && t > 0.85) {
+      const flat = (t - 0.85) / 0.15; // 0..1 over the last stretch
+      const deg = j.i === 1 ? -0.55 : j.i === 2 ? -0.7 : -0.45;
+      j.b.quaternion.multiply(_q.setFromAxisAngle(j.axis, deg * flat));
+    }
   }
   H.hand.updateMatrixWorld(true);
 }
