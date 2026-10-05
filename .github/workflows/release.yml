@@ -1,6 +1,5 @@
-# Each push to master builds the Windows installer and publishes it as a GitHub Release.
-# The version's patch number is the package version plus this workflow's run number, so every
-# push is newer than the last release and installed copies can see the update.
+# Each push to master builds the Windows installer and publishes it as a GitHub Release
+# using the version from package.json.
 name: Release
 on:
   push:
@@ -22,10 +21,8 @@ jobs:
       - name: Release version
         id: ver
         shell: pwsh
-        env:
-          RUN_NUMBER: ${{ github.run_number }}
         run: |
-          node -e "const fs=require('fs'); const p=JSON.parse(fs.readFileSync('package.json','utf8')); const parts=String(p.version).split('.'); while (parts.length<3) parts.push('0'); parts[2]=String(Number(parts[2])+Number(process.env.RUN_NUMBER)); p.version=parts.join('.'); fs.writeFileSync('package.json', JSON.stringify(p, null, 2)+'\n'); fs.appendFileSync(process.env.GITHUB_OUTPUT, 'version='+p.version+'\n'); console.log('version', p.version);"
+          node -e "const fs=require('fs'); const p=JSON.parse(fs.readFileSync('package.json','utf8')); fs.appendFileSync(process.env.GITHUB_OUTPUT, 'version='+p.version+'\n'); console.log('version', p.version);"
       - name: Create release
         shell: pwsh
         env:

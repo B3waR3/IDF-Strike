@@ -1719,6 +1719,7 @@ document.addEventListener('keyup', (e) => {
     S.emote = S.wheelPick || 'wave';
     S.emoteT = 0;
     stab.t = -1;
+    if (net && net.online) net.sendPoseBurst();
   }
 });
 document.addEventListener('mousedown', (e) => {

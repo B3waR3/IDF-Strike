@@ -1,7 +1,7 @@
 {
   "name": "idf-strike",
   "productName": "IDF Strike",
-  "version": "1.0.20",
+  "version": "1.0.21",
   "description": "IDF Strike: Gaza",
   "private": true,
   "main": "electron/main.cjs",

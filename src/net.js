@@ -75,6 +75,7 @@ export function createNet(hooks) {
       id, name: 'Soldier', ready: false, cls: 'rifleman',
       x: 0, y: 0, z: 0, yaw: 0, pitch: 0, vx: 0, vz: 0,
       crouch: false, prone: false, sprint: false, ads: 0, eye: 1.65, weapon: 'tavor',
+      emote: '', emoteT: 0,
       hp: 100, armor: 100, armorMax: 100, alive: false, seenAt: 0, god: false, noclip: false, wallhack: false,
     };
   }
@@ -385,6 +386,9 @@ export function createNet(hooks) {
       b.body.root.position.set(b.x, b.y, b.z);
       b.body.root.rotation.y = b.yaw + Math.PI;
       if (b.dead) { b.body.update(dt, null); continue; }
+      // Keep the emote playing between sparse pose/snap packets.
+      if (s.emote) s.emoteT = (Number(s.emoteT) || 0) + dt;
+      else s.emoteT = 0;
       const fx = -Math.sin(s.yaw), fz = -Math.cos(s.yaw);
       const fwd = (s.vx || 0) * fx + (s.vz || 0) * fz;
       const strafe = (s.vx || 0) * Math.cos(s.yaw) + (s.vz || 0) * -Math.sin(s.yaw);
@@ -424,12 +428,14 @@ export function createNet(hooks) {
       id: 0, name: myName, x: p.pos.x, y: p.pos.y, z: p.pos.z, yaw: p.yaw, pitch: p.pitch,
       vx: p.vel.x, vz: p.vel.z, crouch: !!p.crouch, prone: !!p.prone, sprint: !!p.sprinting,
       ads: S.adsT || 0, weapon: w ? w.id : 'tavor', hp: p.hp, kills: p.kills || 0, points: p.score || 0, score: p.killScore || 0, alive: S.state === 'playing' || S.state === 'paused',
+      emote: S.emote || '', emoteT: S.emoteT || 0,
     }];
     for (const q of peers.values()) {
       players.push({
         id: q.id, name: q.name, x: q.x, y: q.y, z: q.z, yaw: q.yaw, pitch: q.pitch,
         vx: q.vx, vz: q.vz, crouch: q.crouch, prone: q.prone, sprint: q.sprint,
         ads: q.ads, weapon: q.weapon, hp: q.hp, armor: q.armor, kills: q.kills || 0, points: q.score || 0, score: q.killScore || 0, alive: q.alive && q.ready,
+        emote: q.emote || '', emoteT: q.emoteT || 0,
       });
     }
     const enemies = hooks.enemies().map((e) => ({
@@ -569,7 +575,12 @@ export function createNet(hooks) {
       if (role === 'host') send({ t: 'menu' });
     },
     ready(next) { cls = next; send({ t: 'ready', cls: next.id, armor: next.armor, name: myName }); },
-    sendPoseBurst() { if (role === 'client' && hooks.getState().state === 'playing') send(myPose()); },
+    sendPoseBurst() {
+      const st = hooks.getState().state;
+      if (st !== 'playing' && st !== 'paused') return;
+      if (role === 'client') send(myPose());
+      else if (role === 'host') send(buildSnap());
+    },
     send(data, to) { send(data, to); },
     peerByName(name) {
       const n = String(name || '').toLowerCase();
